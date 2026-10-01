@@ -1,6 +1,11 @@
-#[derive(Debug, PartialEq, Eq)]
+//! Token definitions produced by the [`Lexer`](crate::lexer::Lexer).
+
+/// The kind of a lexical token.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum TokenType {
+    /// A character the lexer doesn't recognize.
     ILLEGAL,
+    /// End of input.
     EOF,
     // Idents and Literals
     IDENT,
@@ -8,6 +13,14 @@ pub(crate) enum TokenType {
     // Operators
     ASSIGN,
     PLUS,
+    MINUS,
+    BANG,
+    ASTERISK,
+    SLASH,
+    LT,
+    GT,
+    EQ,
+    NEQ,
     // Delimiters
     COMMA,
     SEMICOLON,
@@ -18,9 +31,15 @@ pub(crate) enum TokenType {
     // Keywords
     FUNCTION,
     LET,
+    TRUE,
+    FALSE,
+    IF,
+    ELSE,
+    RETURN,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+/// A single token: its kind plus the exact source text it was read from.
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub(crate) struct Token {
     pub token: TokenType,
     pub literal: String,
