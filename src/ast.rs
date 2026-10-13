@@ -7,6 +7,7 @@ pub(crate) trait Node {
     /// The literal text of the token this node is associated with.
     /// Used mainly for debugging and testing.
     fn token_literal(&self) -> String;
+    fn string(&self) -> String;
 }
 
 /// A statement: a construct that doesn't produce a value (e.g. `let x = 5;`).
@@ -21,6 +22,13 @@ impl Node for Statement {
         match self {
             Statement::Let(s) => s.token_literal(),
             Statement::Return(s) => s.token_literal(),
+        }
+    }
+
+    fn string(&self) -> String {
+        match self {
+            Statement::Let(s) => s.string(),
+            Statement::Return(s) => s.string(),
         }
     }
 }
@@ -51,6 +59,16 @@ impl Node for Program {
 
         "".to_string()
     }
+
+    fn string(&self) -> String {
+        let mut str = "".to_string();
+
+        for s in &self.statements {
+            str.push_str(s.string().as_str());
+        }
+
+        str
+    }
 }
 
 /// Expression types
@@ -63,6 +81,10 @@ pub(crate) struct Identifier {
 impl Node for Identifier {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        self.value.clone()
     }
 }
 
@@ -79,6 +101,16 @@ impl Node for LetStatement {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
     }
+
+    fn string(&self) -> String {
+        let mut str = "let ".to_string();
+        str.push_str(self.name.string().as_str());
+        str.push_str(" = ");
+
+        str.push_str(";");
+
+        str
+    }
 }
 
 /// A binding of the form `return <value>;`.
@@ -92,5 +124,43 @@ pub(crate) struct ReturnStatement {
 impl Node for ReturnStatement {
     fn token_literal(&self) -> String {
         self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        let mut str = "return".to_string();
+
+        str.push_str(";");
+
+        str
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::token::TokenType;
+
+    use super::*;
+
+    #[test]
+    fn test_string() {
+        let program = Program {
+            statements: vec![Statement::Let(LetStatement {
+                token: Token {
+                    token: TokenType::LET,
+                    literal: "let".to_string(),
+                },
+                name: Identifier {
+                    token: Token {
+                        token: TokenType::IDENT,
+                        literal: "myVar".to_string(),
+                    },
+                    value: "myVar".to_string(),
+                },
+            })],
+        };
+
+        // TODO: Add the value for the right side of the statement
+        assert_eq!(program.string(), "let myVar = ;".to_string())
     }
 }
