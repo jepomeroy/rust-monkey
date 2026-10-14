@@ -41,6 +41,7 @@ impl<'s> Node for Statement<'s> {
 pub(crate) enum Expression<'e> {
     Ident(Identifier<'e>),
     Integer(IntegerLiteral<'e>),
+    PrefixExpr(Prefix<'e>),
 }
 
 impl<'e> Node for Expression<'e> {
@@ -48,6 +49,7 @@ impl<'e> Node for Expression<'e> {
         match self {
             Expression::Ident(identifier) => identifier.token_literal(),
             Expression::Integer(int) => int.token_literal(),
+            Expression::PrefixExpr(prefix) => prefix.token_literal(),
         }
     }
 
@@ -55,6 +57,7 @@ impl<'e> Node for Expression<'e> {
         match self {
             Expression::Ident(identifier) => identifier.string(),
             Expression::Integer(int) => int.string(),
+            Expression::PrefixExpr(prefix) => prefix.string(),
         }
     }
 }
@@ -82,13 +85,13 @@ impl<'p> Node for Program<'p> {
     }
 
     fn string(&self) -> String {
-        let mut str = String::new();
+        let mut out = String::new();
 
         for s in &self.statements {
-            str.push_str(&s.string());
+            out.push_str(&s.string());
         }
 
-        str
+        out
     }
 }
 
@@ -140,13 +143,38 @@ impl<'l> Node for LetStatement<'l> {
     }
 
     fn string(&self) -> String {
-        let mut str = "let ".to_string();
-        str.push_str(&self.name.string());
-        str.push_str(" = ");
+        let mut out = "let ".to_string();
+        out.push_str(&self.name.string());
+        out.push_str(" = ");
 
-        str.push_str(";");
+        out.push_str(";");
 
-        str
+        out
+    }
+}
+
+/// A binding of the form `!5 or -15`
+#[derive(Debug)]
+pub(crate) struct Prefix<'p> {
+    pub(crate) token: Token<'p>,
+    pub(crate) operator: &'p str,
+    pub(crate) right: Box<Expression<'p>>,
+}
+
+impl<'p> Node for Prefix<'p> {
+    fn token_literal(&self) -> &str {
+        self.token.literal
+    }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        out.push_str("(");
+        out.push_str(self.operator);
+        out.push_str(self.right.string().as_str());
+        out.push_str(")");
+
+        out
     }
 }
 
@@ -164,11 +192,11 @@ impl<'r> Node for ReturnStatement<'r> {
     }
 
     fn string(&self) -> String {
-        let mut str = "return".to_string();
+        let mut out = "return".to_string();
 
-        str.push_str(";");
+        out.push_str(";");
 
-        str
+        out
     }
 }
 

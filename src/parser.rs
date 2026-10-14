@@ -4,7 +4,8 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{
-        Expression, Identifier, IntegerLiteral, LetStatement, Program, ReturnStatement,
+        Expression::{self, PrefixExpr},
+        Identifier, IntegerLiteral, LetStatement, Prefix, Program, ReturnStatement,
         Statement::{self, ExpressionStmt},
     },
     lexer::Lexer,
@@ -62,6 +63,8 @@ impl<'p> Parser<'p> {
         // populate prefix parse fns
         parser.register_prefix(TokenType::IDENT, Self::parse_identifier);
         parser.register_prefix(TokenType::INT, Self::parse_integer);
+        parser.register_prefix(TokenType::BANG, Self::parse_prefix);
+        parser.register_prefix(TokenType::MINUS, Self::parse_prefix);
 
         // populate infix parse fns
 
@@ -103,6 +106,11 @@ impl<'p> Parser<'p> {
     fn next_token(&mut self) {
         self.curr_token = self.peek_token.clone();
         self.peek_token = self.lexer.next_token();
+    }
+
+    fn no_prefix_parse_fn_error(&mut self, token: TokenType) {
+        self.errors
+            .push(format!("no prefix parse function for {:?} found", token));
     }
 
     /// Parses statements until EOF. Statements that fail to parse are skipped.
@@ -169,6 +177,8 @@ impl<'p> Parser<'p> {
             return prefix(self);
         }
 
+        self.no_prefix_parse_fn_error(self.curr_token.token);
+
         None
     }
 
@@ -228,6 +238,25 @@ impl<'p> Parser<'p> {
         Some(Statement::Let(stmt))
     }
 
+    /// Parses `!5` and `-15` expression starting with `curr_token` on the prefix
+    fn parse_prefix(&mut self) -> Option<Expression<'p>> {
+        let token = self.curr_token.clone();
+
+        self.next_token();
+
+        if let Some(right) = self.parse_expression(Precedence::Prefix) {
+            let expr = PrefixExpr(Prefix {
+                token: token.clone(),
+                operator: token.literal,
+                right: Box::new(right),
+            });
+
+            return Some(expr);
+        }
+
+        None
+    }
+
     /// Parses `return <expr>;`, starting with `curr_token` on `return`.
     fn parse_return_statement(&mut self) -> Option<Statement<'p>> {
         let curr_token = self.curr_token.clone();
@@ -253,6 +282,8 @@ impl<'p> Parser<'p> {
 
 #[cfg(test)]
 mod tests {
+    use core::panic;
+
     use crate::ast::{Node, Statement};
 
     use super::*;
@@ -270,8 +301,6 @@ mod tests {
     fn make_program(input: &str) -> Parser<'_> {
         let lexer = Lexer::new(input);
         let p = Parser::new(lexer);
-        println!("{:?}", p);
-        check_for_parse_errors(&p);
 
         p
     }
@@ -282,6 +311,7 @@ mod tests {
 
         let mut parser = make_program(input);
         let program = parser.parse_program();
+        check_for_parse_errors(&parser);
 
         assert_eq!(program.statements.len(), 1);
 
@@ -302,17 +332,27 @@ mod tests {
 
         let mut parser = make_program(input);
         let program = parser.parse_program();
+        check_for_parse_errors(&parser);
 
         assert_eq!(program.statements.len(), 1);
 
         for stmt in program.statements {
             match stmt {
-                Statement::ExpressionStmt(identifier) => {
-                    assert_eq!(identifier.string(), "5");
-                    assert_eq!(identifier.token_literal(), "5");
+                Statement::ExpressionStmt(integer) => {
+                    assert_eq!(integer.string(), "5");
+                    assert_eq!(integer.token_literal(), "5");
                 }
                 _ => panic!("Expected Integer, got {:?}", stmt),
             }
+        }
+    }
+
+    fn test_integer_literal(expr: Expression, value: i64) {
+        match expr {
+            Expression::Integer(integer) => {
+                assert_eq!(integer.value, value)
+            }
+            _ => panic!("Expected Integer, got {:?}", expr),
         }
     }
 
@@ -325,12 +365,11 @@ mod tests {
 
         let mut parser = make_program(input);
         let program = parser.parse_program();
+        check_for_parse_errors(&parser);
 
         assert_eq!(program.statements.len(), 3);
 
         let expected = vec!["x".to_string(), "y".to_string(), "foobar".to_string()];
-
-        println!("{:?}", program.statements);
 
         for (stmt, expected) in program.statements.iter().zip(expected) {
             assert!(stmt.token_literal() == "let");
@@ -345,6 +384,52 @@ mod tests {
         }
     }
 
+    struct PrefixInputs<'pi> {
+        input: &'pi str,
+        operator: &'pi str,
+        int_value: i64,
+    }
+
+    #[test]
+    fn test_parsing_prefix_expressions() {
+        let inputs = vec![
+            PrefixInputs {
+                input: "!5",
+                operator: "!",
+                int_value: 5,
+            },
+            PrefixInputs {
+                input: "-15",
+                operator: "-",
+                int_value: 15,
+            },
+        ];
+
+        for input in inputs {
+            let mut parser = make_program(input.input);
+            let program = parser.parse_program();
+
+            println!("{:?}", program);
+
+            check_for_parse_errors(&parser);
+
+            assert_eq!(program.statements.len(), 1);
+
+            for stmt in program.statements {
+                match stmt {
+                    Statement::ExpressionStmt(expr) => match expr {
+                        Expression::PrefixExpr(prefix) => {
+                            assert_eq!(prefix.operator, input.operator);
+                            test_integer_literal(*prefix.right, input.int_value)
+                        }
+                        _ => panic!("Expected Expression Statement, got {:?}", expr),
+                    },
+                    _ => panic!("Expected Expression Statement, got {:?}", stmt),
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_return_statements() {
         let input = r"
@@ -354,6 +439,7 @@ mod tests {
 
         let mut parser = make_program(input);
         let program = parser.parse_program();
+        check_for_parse_errors(&parser);
 
         assert_eq!(program.statements.len(), 3);
 
