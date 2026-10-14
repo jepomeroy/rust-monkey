@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{
-        Expression, Identifier, LetStatement, Program, ReturnStatement,
+        Expression, Identifier, IntegerLiteral, LetStatement, Program, ReturnStatement,
         Statement::{self, ExpressionStmt},
     },
     lexer::Lexer,
@@ -25,8 +25,8 @@ pub(crate) enum Precedence {
     Index,       // array[idx]
 }
 
-type PrefixParseFn<'p> = fn(&Parser<'p>) -> Expression<'p>;
-type InfixParseFn<'p> = fn(Expression<'p>) -> Expression<'p>;
+type PrefixParseFn<'p> = fn(&mut Parser<'p>) -> Option<Expression<'p>>;
+type InfixParseFn<'p> = fn(Expression<'p>) -> Option<Expression<'p>>;
 
 /// Recursive-descent parser that builds a [`Program`] from a [`Lexer`]'s tokens.
 ///
@@ -60,9 +60,8 @@ impl<'p> Parser<'p> {
         };
 
         // populate prefix parse fns
-        parser
-            .prefix_parse_fns
-            .insert(TokenType::IDENT, Self::parse_identifier);
+        parser.register_prefix(TokenType::IDENT, Self::parse_identifier);
+        parser.register_prefix(TokenType::INT, Self::parse_integer);
 
         // populate infix parse fns
 
@@ -167,17 +166,34 @@ impl<'p> Parser<'p> {
 
     fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression<'p>> {
         if let Some(prefix) = self.prefix_parse_fns.get(&self.curr_token.token) {
-            return Some(prefix(self));
+            return prefix(self);
         }
 
         None
     }
 
-    fn parse_identifier(&self) -> Expression<'p> {
-        return Expression::Ident(Identifier {
+    fn parse_identifier(&mut self) -> Option<Expression<'p>> {
+        Some(Expression::Ident(Identifier {
             token: self.curr_token.clone(),
             value: self.curr_token.literal,
-        });
+        }))
+    }
+
+    fn parse_integer(&mut self) -> Option<Expression<'p>> {
+        match self.curr_token.literal.parse::<i64>() {
+            Ok(int) => Some(Expression::Integer(IntegerLiteral {
+                token: self.curr_token.clone(),
+                value: int,
+            })),
+            Err(_) => {
+                self.errors.push(format!(
+                    "could not parse {} as integer",
+                    self.curr_token.literal
+                ));
+
+                None
+            }
+        }
     }
 
     /// Parses `let <ident> = <expr>;`, starting with `curr_token` on `let`.
@@ -281,6 +297,26 @@ mod tests {
     }
 
     #[test]
+    fn test_integer_expression() {
+        let input = "5;";
+
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
+
+        assert_eq!(program.statements.len(), 1);
+
+        for stmt in program.statements {
+            match stmt {
+                Statement::ExpressionStmt(identifier) => {
+                    assert_eq!(identifier.string(), "5");
+                    assert_eq!(identifier.token_literal(), "5");
+                }
+                _ => panic!("Expected Integer, got {:?}", stmt),
+            }
+        }
+    }
+
+    #[test]
     fn test_let_statements() {
         let input = r"
             let x = 5;
@@ -325,7 +361,7 @@ mod tests {
 
         println!("{:?}", program.statements);
 
-        for (stmt, expected) in program.statements.iter().zip(expected) {
+        for (stmt, _expected) in program.statements.iter().zip(expected) {
             assert!(stmt.token_literal() == "return");
 
             match stmt {

@@ -40,18 +40,21 @@ impl<'s> Node for Statement<'s> {
 #[derive(Debug)]
 pub(crate) enum Expression<'e> {
     Ident(Identifier<'e>),
+    Integer(IntegerLiteral<'e>),
 }
 
 impl<'e> Node for Expression<'e> {
     fn token_literal(&self) -> &str {
         match self {
             Expression::Ident(identifier) => identifier.token_literal(),
+            Expression::Integer(int) => int.token_literal(),
         }
     }
 
     fn string(&self) -> String {
         match self {
             Expression::Ident(identifier) => identifier.string(),
+            Expression::Integer(int) => int.string(),
         }
     }
 }
@@ -97,6 +100,22 @@ pub(crate) struct Identifier<'i> {
 }
 
 impl<'i> Node for Identifier<'i> {
+    fn token_literal(&self) -> &str {
+        self.token.literal
+    }
+
+    fn string(&self) -> String {
+        self.value.to_string()
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct IntegerLiteral<'i> {
+    pub(crate) token: Token<'i>,
+    pub(crate) value: i64,
+}
+
+impl<'i> Node for IntegerLiteral<'i> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
