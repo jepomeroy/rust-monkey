@@ -23,7 +23,7 @@ pub(crate) fn start<R: BufRead, W: Write>(mut input: R, mut out: W) -> io::Resul
         }
 
         // Print every token on the line until the lexer reaches the end.
-        let mut lexer = Lexer::new(buff);
+        let mut lexer = Lexer::new(&buff);
         let mut token = lexer.next_token();
         while token.token != TokenType::EOF {
             writeln!(out, "{:?}", token)?;

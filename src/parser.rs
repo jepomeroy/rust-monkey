@@ -25,26 +25,26 @@ pub(crate) enum Precedence {
     Index,       // array[idx]
 }
 
-type PrefixParseFn = for<'a> fn(&'a Parser) -> Expression;
-type InfixParseFn = fn(Expression) -> Expression;
+type PrefixParseFn<'p> = fn(&Parser<'p>) -> Expression<'p>;
+type InfixParseFn<'p> = fn(Expression<'p>) -> Expression<'p>;
 
 /// Recursive-descent parser that builds a [`Program`] from a [`Lexer`]'s tokens.
 ///
 /// Keeps a one-token lookahead: `curr_token` is being parsed and
 /// `peek_token` is the one after it.
 #[derive(Debug)]
-pub(crate) struct Parser {
-    lexer: Lexer,
-    curr_token: Token,
-    peek_token: Token,
+pub(crate) struct Parser<'p> {
+    lexer: Lexer<'p>,
+    curr_token: Token<'p>,
+    peek_token: Token<'p>,
     errors: Vec<String>,
-    prefix_parse_fns: HashMap<TokenType, PrefixParseFn>,
-    infix_parse_fns: HashMap<TokenType, InfixParseFn>,
+    prefix_parse_fns: HashMap<TokenType, PrefixParseFn<'p>>,
+    infix_parse_fns: HashMap<TokenType, InfixParseFn<'p>>,
 }
 
-impl Parser {
+impl<'p> Parser<'p> {
     /// Creates a parser, reading two tokens to fill `curr_token` and `peek_token`.
-    pub(crate) fn new(mut lexer: Lexer) -> Self {
+    pub(crate) fn new(mut lexer: Lexer<'p>) -> Self {
         let curr = lexer.next_token();
         let peek = lexer.next_token();
         let prefix_parse_fns = HashMap::new();
@@ -62,7 +62,7 @@ impl Parser {
         // populate prefix parse fns
         parser
             .prefix_parse_fns
-            .insert(TokenType::IDENT, Parser::parse_identifier);
+            .insert(TokenType::IDENT, Self::parse_identifier);
 
         // populate infix parse fns
 
@@ -107,7 +107,7 @@ impl Parser {
     }
 
     /// Parses statements until EOF. Statements that fail to parse are skipped.
-    pub(crate) fn parse_program(&mut self) -> Program {
+    pub(crate) fn parse_program(&mut self) -> Program<'p> {
         let mut program = Program::new();
 
         while self.curr_token.token != TokenType::EOF {
@@ -122,7 +122,7 @@ impl Parser {
     }
 
     /// Dispatches on the current token.
-    fn parse_statement(&mut self) -> Option<Statement> {
+    fn parse_statement(&mut self) -> Option<Statement<'p>> {
         match self.curr_token.token {
             // TokenType::ILLEGAL => todo!(),
             // TokenType::EOF => todo!(),
@@ -155,8 +155,7 @@ impl Parser {
         }
     }
 
-    fn parse_expression_statement(&mut self) -> Option<Statement> {
-        let token = self.curr_token.clone();
+    fn parse_expression_statement(&mut self) -> Option<Statement<'p>> {
         let expr = self.parse_expression(Precedence::Lowest);
 
         if self.peek_token_is(TokenType::SEMICOLON) {
@@ -166,7 +165,7 @@ impl Parser {
         Some(ExpressionStmt(expr?))
     }
 
-    fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
+    fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression<'p>> {
         if let Some(prefix) = self.prefix_parse_fns.get(&self.curr_token.token) {
             return Some(prefix(self));
         }
@@ -174,15 +173,15 @@ impl Parser {
         None
     }
 
-    fn parse_identifier(&self) -> Expression {
+    fn parse_identifier(&self) -> Expression<'p> {
         return Expression::Ident(Identifier {
             token: self.curr_token.clone(),
-            value: self.curr_token.literal.clone(),
+            value: self.curr_token.literal,
         });
     }
 
     /// Parses `let <ident> = <expr>;`, starting with `curr_token` on `let`.
-    fn parse_let_statement(&mut self) -> Option<Statement> {
+    fn parse_let_statement(&mut self) -> Option<Statement<'p>> {
         let curr_token = self.curr_token.clone();
 
         if !self.expect_peek(TokenType::IDENT) {
@@ -191,7 +190,7 @@ impl Parser {
 
         let identifier = Identifier {
             token: self.curr_token.clone(),
-            value: self.curr_token.literal.to_string(),
+            value: self.curr_token.literal,
         };
 
         let stmt = LetStatement {
@@ -214,7 +213,7 @@ impl Parser {
     }
 
     /// Parses `return <expr>;`, starting with `curr_token` on `return`.
-    fn parse_return_statement(&mut self) -> Option<Statement> {
+    fn parse_return_statement(&mut self) -> Option<Statement<'p>> {
         let curr_token = self.curr_token.clone();
 
         let stmt = ReturnStatement {
@@ -231,7 +230,7 @@ impl Parser {
         Some(Statement::Return(stmt))
     }
 
-    fn register_prefix(&mut self, token: TokenType, func: PrefixParseFn) {
+    fn register_prefix(&mut self, token: TokenType, func: PrefixParseFn<'p>) {
         self.prefix_parse_fns.insert(token, func);
     }
 }
@@ -252,21 +251,21 @@ mod tests {
         assert_eq!(errors.len(), 0, "parser had {} errors", errors.len());
     }
 
-    fn make_program(input: &str) -> Program {
-        let lexer = Lexer::new(input.to_string());
-        let mut p = Parser::new(lexer);
+    fn make_program(input: &str) -> Parser<'_> {
+        let lexer = Lexer::new(input);
+        let p = Parser::new(lexer);
         println!("{:?}", p);
-        let program = p.parse_program();
         check_for_parse_errors(&p);
 
-        program
+        p
     }
 
     #[test]
     fn test_identifier_expression() {
         let input = "foobar;";
 
-        let program = make_program(input);
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
 
         assert_eq!(program.statements.len(), 1);
 
@@ -288,7 +287,8 @@ mod tests {
             let y = 10;
             let foobar = 838383;";
 
-        let program = make_program(input);
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
 
         assert_eq!(program.statements.len(), 3);
 
@@ -297,7 +297,7 @@ mod tests {
         println!("{:?}", program.statements);
 
         for (stmt, expected) in program.statements.iter().zip(expected) {
-            assert!(&stmt.token_literal() == "let");
+            assert!(stmt.token_literal() == "let");
 
             match stmt {
                 Statement::Let(let_stmt) => {
@@ -316,7 +316,8 @@ mod tests {
             return 10;
             return 838383;";
 
-        let program = make_program(input);
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
 
         assert_eq!(program.statements.len(), 3);
 
@@ -325,7 +326,7 @@ mod tests {
         println!("{:?}", program.statements);
 
         for (stmt, expected) in program.statements.iter().zip(expected) {
-            assert!(&stmt.token_literal() == "return");
+            assert!(stmt.token_literal() == "return");
 
             match stmt {
                 Statement::Return(ret_stmt) => {

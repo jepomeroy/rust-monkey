@@ -40,13 +40,13 @@ pub(crate) enum TokenType {
 
 /// A single token: its kind plus the exact source text it was read from.
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub(crate) struct Token {
+pub(crate) struct Token<'src> {
     pub token: TokenType,
-    pub literal: String,
+    pub literal: &'src str,
 }
 
-impl Token {
-    pub(crate) fn new(token: TokenType, literal: String) -> Self {
+impl<'src> Token<'src> {
+    pub(crate) fn new(token: TokenType, literal: &'src str) -> Self {
         Self { token, literal }
     }
 }
