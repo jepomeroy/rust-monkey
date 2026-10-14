@@ -15,6 +15,7 @@ pub(crate) trait Node {
 pub(crate) enum Statement {
     Let(LetStatement),
     Return(ReturnStatement),
+    ExpressionStmt(Expression),
 }
 
 impl Node for Statement {
@@ -22,6 +23,7 @@ impl Node for Statement {
         match self {
             Statement::Let(s) => s.token_literal(),
             Statement::Return(s) => s.token_literal(),
+            Statement::ExpressionStmt(expression) => expression.token_literal(),
         }
     }
 
@@ -29,6 +31,7 @@ impl Node for Statement {
         match self {
             Statement::Let(s) => s.string(),
             Statement::Return(s) => s.string(),
+            Statement::ExpressionStmt(expression) => expression.string(),
         }
     }
 }
@@ -39,7 +42,22 @@ pub(crate) enum Expression {
     Ident(Identifier),
 }
 
+impl Node for Expression {
+    fn token_literal(&self) -> String {
+        match self {
+            Expression::Ident(identifier) => identifier.token_literal(),
+        }
+    }
+
+    fn string(&self) -> String {
+        match self {
+            Expression::Ident(identifier) => identifier.string(),
+        }
+    }
+}
+
 /// The root of every AST: a program is a sequence of statements.
+#[derive(Debug)]
 pub(crate) struct Program {
     pub(crate) statements: Vec<Statement>,
 }

@@ -1,7 +1,7 @@
 //! Token definitions produced by the [`Lexer`](crate::lexer::Lexer).
 
 /// The kind of a lexical token.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub(crate) enum TokenType {
     /// A character the lexer doesn't recognize.
     ILLEGAL,

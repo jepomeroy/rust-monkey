@@ -4,7 +4,7 @@ use crate::token::Token;
 use crate::token::TokenType;
 
 /// Byte-oriented lexer. Only ASCII input is supported.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct Lexer {
     input: Vec<u8>,
     /// Index of `ch` in `input`.

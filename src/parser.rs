@@ -1,7 +1,12 @@
 //! Builds an [`ast`](crate::ast) from the tokens produced by the [`Lexer`].
 
+use std::collections::HashMap;
+
 use crate::{
-    ast::{Expression, Identifier, LetStatement, Program, ReturnStatement, Statement},
+    ast::{
+        Expression, Identifier, LetStatement, Program, ReturnStatement,
+        Statement::{self, ExpressionStmt},
+    },
     lexer::Lexer,
     token::{
         Token,
@@ -9,15 +14,32 @@ use crate::{
     },
 };
 
+pub(crate) enum Precedence {
+    Lowest,
+    Equals,      // ==
+    LessGreater, // < or >
+    Sum,         // +
+    Product,     // *
+    Prefix,      // -X or !X
+    Call,        // myFunc(X)
+    Index,       // array[idx]
+}
+
+type PrefixParseFn = for<'a> fn(&'a Parser) -> Expression;
+type InfixParseFn = fn(Expression) -> Expression;
+
 /// Recursive-descent parser that builds a [`Program`] from a [`Lexer`]'s tokens.
 ///
 /// Keeps a one-token lookahead: `curr_token` is being parsed and
 /// `peek_token` is the one after it.
+#[derive(Debug)]
 pub(crate) struct Parser {
     lexer: Lexer,
     curr_token: Token,
     peek_token: Token,
     errors: Vec<String>,
+    prefix_parse_fns: HashMap<TokenType, PrefixParseFn>,
+    infix_parse_fns: HashMap<TokenType, InfixParseFn>,
 }
 
 impl Parser {
@@ -25,13 +47,26 @@ impl Parser {
     pub(crate) fn new(mut lexer: Lexer) -> Self {
         let curr = lexer.next_token();
         let peek = lexer.next_token();
+        let prefix_parse_fns = HashMap::new();
+        let infix_parse_fns = HashMap::new();
 
-        Self {
+        let mut parser = Self {
             lexer,
             curr_token: curr,
             peek_token: peek,
             errors: vec![],
-        }
+            prefix_parse_fns,
+            infix_parse_fns,
+        };
+
+        // populate prefix parse fns
+        parser
+            .prefix_parse_fns
+            .insert(TokenType::IDENT, Parser::parse_identifier);
+
+        // populate infix parse fns
+
+        parser
     }
 
     fn curr_token_is(&self, token: TokenType) -> bool {
@@ -116,12 +151,34 @@ impl Parser {
             // TokenType::IF => todo!(),
             // TokenType::ELSE => todo!(),
             TokenType::RETURN => self.parse_return_statement(),
-            _ => None,
+            _ => self.parse_expression_statement(),
         }
     }
 
-    fn parse_expression(&mut self) -> Expression {
-        todo!()
+    fn parse_expression_statement(&mut self) -> Option<Statement> {
+        let token = self.curr_token.clone();
+        let expr = self.parse_expression(Precedence::Lowest);
+
+        if self.peek_token_is(TokenType::SEMICOLON) {
+            self.next_token();
+        }
+
+        Some(ExpressionStmt(expr?))
+    }
+
+    fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
+        if let Some(prefix) = self.prefix_parse_fns.get(&self.curr_token.token) {
+            return Some(prefix(self));
+        }
+
+        None
+    }
+
+    fn parse_identifier(&self) -> Expression {
+        return Expression::Ident(Identifier {
+            token: self.curr_token.clone(),
+            value: self.curr_token.literal.clone(),
+        });
     }
 
     /// Parses `let <ident> = <expr>;`, starting with `curr_token` on `let`.
@@ -173,6 +230,10 @@ impl Parser {
 
         Some(Statement::Return(stmt))
     }
+
+    fn register_prefix(&mut self, token: TokenType, func: PrefixParseFn) {
+        self.prefix_parse_fns.insert(token, func);
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +252,35 @@ mod tests {
         assert_eq!(errors.len(), 0, "parser had {} errors", errors.len());
     }
 
+    fn make_program(input: &str) -> Program {
+        let lexer = Lexer::new(input.to_string());
+        let mut p = Parser::new(lexer);
+        println!("{:?}", p);
+        let program = p.parse_program();
+        check_for_parse_errors(&p);
+
+        program
+    }
+
+    #[test]
+    fn test_identifier_expression() {
+        let input = "foobar;";
+
+        let program = make_program(input);
+
+        assert_eq!(program.statements.len(), 1);
+
+        for stmt in program.statements {
+            match stmt {
+                Statement::ExpressionStmt(identifier) => {
+                    assert_eq!(identifier.string(), "foobar");
+                    assert_eq!(identifier.token_literal(), "foobar");
+                }
+                _ => panic!("Expected identifier, got {:?}", stmt),
+            }
+        }
+    }
+
     #[test]
     fn test_let_statements() {
         let input = r"
@@ -198,10 +288,7 @@ mod tests {
             let y = 10;
             let foobar = 838383;";
 
-        let lexer = Lexer::new(input.to_string());
-        let mut p = Parser::new(lexer);
-        let program = p.parse_program();
-        check_for_parse_errors(&p);
+        let program = make_program(input);
 
         assert_eq!(program.statements.len(), 3);
 
@@ -217,7 +304,7 @@ mod tests {
                     assert_eq!(let_stmt.name.value, expected);
                     assert_eq!(let_stmt.name.token_literal(), expected);
                 }
-                _ => panic!("Expected let statement"),
+                _ => panic!("Expected let statement, got {:?}", stmt),
             };
         }
     }
@@ -229,10 +316,7 @@ mod tests {
             return 10;
             return 838383;";
 
-        let lexer = Lexer::new(input.to_string());
-        let mut p = Parser::new(lexer);
-        let program = p.parse_program();
-        check_for_parse_errors(&p);
+        let program = make_program(input);
 
         assert_eq!(program.statements.len(), 3);
 
