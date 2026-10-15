@@ -40,6 +40,7 @@ impl<'s> Node for Statement<'s> {
 #[derive(Debug)]
 pub(crate) enum Expression<'e> {
     Ident(Identifier<'e>),
+    InfixExpr(Infix<'e>),
     Integer(IntegerLiteral<'e>),
     PrefixExpr(Prefix<'e>),
 }
@@ -48,6 +49,7 @@ impl<'e> Node for Expression<'e> {
     fn token_literal(&self) -> &str {
         match self {
             Expression::Ident(identifier) => identifier.token_literal(),
+            Expression::InfixExpr(infix) => infix.token_literal(),
             Expression::Integer(int) => int.token_literal(),
             Expression::PrefixExpr(prefix) => prefix.token_literal(),
         }
@@ -56,6 +58,7 @@ impl<'e> Node for Expression<'e> {
     fn string(&self) -> String {
         match self {
             Expression::Ident(identifier) => identifier.string(),
+            Expression::InfixExpr(infix) => infix.string(),
             Expression::Integer(int) => int.string(),
             Expression::PrefixExpr(prefix) => prefix.string(),
         }
@@ -112,6 +115,36 @@ impl<'i> Node for Identifier<'i> {
     }
 }
 
+/// A binding of the form `!5 or -15`
+#[derive(Debug)]
+pub(crate) struct Infix<'i> {
+    pub(crate) token: Token<'i>,
+    pub(crate) left: Box<Expression<'i>>,
+    pub(crate) operator: &'i str,
+    pub(crate) right: Box<Expression<'i>>,
+}
+
+impl<'i> Node for Infix<'i> {
+    fn token_literal(&self) -> &str {
+        self.token.literal
+    }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        out.push_str("(");
+        out.push_str(self.left.string().as_str());
+        out.push_str(" ");
+        out.push_str(self.operator);
+        out.push_str(" ");
+        out.push_str(self.right.string().as_str());
+        out.push_str(")");
+
+        out
+    }
+}
+
+/// A binding for Integer literal values in the form of 5 or -15
 #[derive(Debug)]
 pub(crate) struct IntegerLiteral<'i> {
     pub(crate) token: Token<'i>,

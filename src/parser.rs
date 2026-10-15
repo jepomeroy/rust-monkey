@@ -4,8 +4,8 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{
-        Expression::{self, PrefixExpr},
-        Identifier, IntegerLiteral, LetStatement, Prefix, Program, ReturnStatement,
+        Expression::{self, InfixExpr, PrefixExpr},
+        Identifier, Infix, IntegerLiteral, LetStatement, Prefix, Program, ReturnStatement,
         Statement::{self, ExpressionStmt},
     },
     lexer::Lexer,
@@ -15,6 +15,7 @@ use crate::{
     },
 };
 
+#[derive(PartialEq, PartialOrd, Debug)]
 pub(crate) enum Precedence {
     Lowest,
     Equals,      // ==
@@ -26,8 +27,22 @@ pub(crate) enum Precedence {
     Index,       // array[idx]
 }
 
+fn map_precedence(token: TokenType) -> Precedence {
+    match token {
+        TokenType::PLUS => Precedence::Sum,
+        TokenType::MINUS => Precedence::Sum,
+        TokenType::ASTERISK => Precedence::Product,
+        TokenType::SLASH => Precedence::Product,
+        TokenType::LT => Precedence::LessGreater,
+        TokenType::GT => Precedence::LessGreater,
+        TokenType::EQ => Precedence::Equals,
+        TokenType::NEQ => Precedence::Equals,
+        _ => Precedence::Lowest,
+    }
+}
+
 type PrefixParseFn<'p> = fn(&mut Parser<'p>) -> Option<Expression<'p>>;
-type InfixParseFn<'p> = fn(Expression<'p>) -> Option<Expression<'p>>;
+type InfixParseFn<'p> = fn(&mut Parser<'p>, Option<Expression<'p>>) -> Option<Expression<'p>>;
 
 /// Recursive-descent parser that builds a [`Program`] from a [`Lexer`]'s tokens.
 ///
@@ -67,6 +82,14 @@ impl<'p> Parser<'p> {
         parser.register_prefix(TokenType::MINUS, Self::parse_prefix);
 
         // populate infix parse fns
+        parser.register_infix(TokenType::PLUS, Self::parse_infix);
+        parser.register_infix(TokenType::MINUS, Self::parse_infix);
+        parser.register_infix(TokenType::SLASH, Self::parse_infix);
+        parser.register_infix(TokenType::ASTERISK, Self::parse_infix);
+        parser.register_infix(TokenType::LT, Self::parse_infix);
+        parser.register_infix(TokenType::GT, Self::parse_infix);
+        parser.register_infix(TokenType::EQ, Self::parse_infix);
+        parser.register_infix(TokenType::NEQ, Self::parse_infix);
 
         parser
     }
@@ -173,8 +196,19 @@ impl<'p> Parser<'p> {
     }
 
     fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression<'p>> {
-        if let Some(prefix) = self.prefix_parse_fns.get(&self.curr_token.token) {
-            return prefix(self);
+        if let Some(prefix) = self.prefix_parse_fns.get(&self.curr_token.token).copied() {
+            let mut left = prefix(self);
+
+            while !self.peek_token_is(TokenType::SEMICOLON) && precedence < self.peek_precedence() {
+                let Some(infix) = self.infix_parse_fns.get(&self.peek_token.token).copied() else {
+                    return left;
+                };
+
+                self.next_token();
+                left = infix(self, left);
+            }
+
+            return left;
         }
 
         self.no_prefix_parse_fn_error(self.curr_token.token);
@@ -187,6 +221,24 @@ impl<'p> Parser<'p> {
             token: self.curr_token.clone(),
             value: self.curr_token.literal,
         }))
+    }
+
+    fn parse_infix(&mut self, left: Option<Expression<'p>>) -> Option<Expression<'p>> {
+        if let Some(left_expr) = left {
+            let token = self.curr_token.clone();
+            let precedence = self.curr_precedence();
+            self.next_token();
+            if let Some(right_expr) = self.parse_expression(precedence) {
+                return Some(InfixExpr(Infix {
+                    token: token.clone(),
+                    left: Box::new(left_expr),
+                    operator: token.literal,
+                    right: Box::new(right_expr),
+                }));
+            }
+        }
+
+        None
     }
 
     fn parse_integer(&mut self) -> Option<Expression<'p>> {
@@ -273,6 +325,18 @@ impl<'p> Parser<'p> {
         }
 
         Some(Statement::Return(stmt))
+    }
+
+    fn peek_precedence(&self) -> Precedence {
+        map_precedence(self.peek_token.token)
+    }
+
+    fn curr_precedence(&self) -> Precedence {
+        map_precedence(self.curr_token.token)
+    }
+
+    fn register_infix(&mut self, token: TokenType, func: InfixParseFn<'p>) {
+        self.infix_parse_fns.insert(token, func);
     }
 
     fn register_prefix(&mut self, token: TokenType, func: PrefixParseFn<'p>) {
@@ -384,6 +448,157 @@ mod tests {
         }
     }
 
+    struct OpPrecedenceInputs<'opi> {
+        input: &'opi str,
+        expected: &'opi str,
+    }
+
+    #[test]
+    fn test_operator_precedence_parsing() {
+        let inputs = vec![
+            OpPrecedenceInputs {
+                input: "-a * b",
+                expected: "((-a) * b)",
+            },
+            OpPrecedenceInputs {
+                input: "!-a",
+                expected: "(!(-a))",
+            },
+            OpPrecedenceInputs {
+                input: "a + b + c",
+                expected: "((a + b) + c)",
+            },
+            OpPrecedenceInputs {
+                input: "a + b - c",
+                expected: "((a + b) - c)",
+            },
+            OpPrecedenceInputs {
+                input: "a * b * c",
+                expected: "((a * b) * c)",
+            },
+            OpPrecedenceInputs {
+                input: "a * b / c",
+                expected: "((a * b) / c)",
+            },
+            OpPrecedenceInputs {
+                input: "a + b / c",
+                expected: "(a + (b / c))",
+            },
+            OpPrecedenceInputs {
+                input: "a + b * c + d / e - f",
+                expected: "(((a + (b * c)) + (d / e)) - f)",
+            },
+            OpPrecedenceInputs {
+                input: "3 + 4; -5 * 5",
+                expected: "(3 + 4)((-5) * 5)",
+            },
+            OpPrecedenceInputs {
+                input: "5 > 4 == 3 < 4",
+                expected: "((5 > 4) == (3 < 4))",
+            },
+            OpPrecedenceInputs {
+                input: "5 > 4 != 3 > 4",
+                expected: "((5 > 4) != (3 > 4))",
+            },
+            OpPrecedenceInputs {
+                input: "3 + 4 * 5 == 3 * 1 + 4 * 5",
+                expected: "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
+            },
+        ];
+
+        for input in inputs {
+            let mut parser = make_program(input.input);
+            let program = parser.parse_program();
+            check_for_parse_errors(&parser);
+
+            let actual = program.string();
+            assert_eq!(actual, input.expected);
+        }
+    }
+
+    struct InfixInputs<'pi> {
+        input: &'pi str,
+        left_value: i64,
+        operator: &'pi str,
+        right_value: i64,
+    }
+
+    #[test]
+    fn test_parsing_infix_expressions() {
+        let inputs = vec![
+            InfixInputs {
+                input: "5 + 5",
+                left_value: 5,
+                operator: "+",
+                right_value: 5,
+            },
+            InfixInputs {
+                input: "5 - 5",
+                left_value: 5,
+                operator: "-",
+                right_value: 5,
+            },
+            InfixInputs {
+                input: "5 * 5",
+                left_value: 5,
+                operator: "*",
+                right_value: 5,
+            },
+            InfixInputs {
+                input: "5 / 5",
+                left_value: 5,
+                operator: "/",
+                right_value: 5,
+            },
+            InfixInputs {
+                input: "5 > 5",
+                left_value: 5,
+                operator: ">",
+                right_value: 5,
+            },
+            InfixInputs {
+                input: "5 < 5",
+                left_value: 5,
+                operator: "<",
+                right_value: 5,
+            },
+            InfixInputs {
+                input: "5 == 5",
+                left_value: 5,
+                operator: "==",
+                right_value: 5,
+            },
+            InfixInputs {
+                input: "5 != 5",
+                left_value: 5,
+                operator: "!=",
+                right_value: 5,
+            },
+        ];
+
+        for input in inputs {
+            let mut parser = make_program(input.input);
+            let program = parser.parse_program();
+            check_for_parse_errors(&parser);
+
+            assert_eq!(program.statements.len(), 1);
+
+            for stmt in program.statements {
+                match stmt {
+                    Statement::ExpressionStmt(expr) => match expr {
+                        Expression::InfixExpr(infix) => {
+                            test_integer_literal(*infix.left, input.left_value);
+                            assert_eq!(infix.operator, input.operator);
+                            test_integer_literal(*infix.right, input.right_value);
+                        }
+                        _ => panic!("Expected Expression Statement, got {:?}", expr),
+                    },
+                    _ => panic!("Expected Expression Statement, got {:?}", stmt),
+                }
+            }
+        }
+    }
+
     struct PrefixInputs<'pi> {
         input: &'pi str,
         operator: &'pi str,
@@ -408,9 +623,6 @@ mod tests {
         for input in inputs {
             let mut parser = make_program(input.input);
             let program = parser.parse_program();
-
-            println!("{:?}", program);
-
             check_for_parse_errors(&parser);
 
             assert_eq!(program.statements.len(), 1);
@@ -420,7 +632,7 @@ mod tests {
                     Statement::ExpressionStmt(expr) => match expr {
                         Expression::PrefixExpr(prefix) => {
                             assert_eq!(prefix.operator, input.operator);
-                            test_integer_literal(*prefix.right, input.int_value)
+                            test_integer_literal(*prefix.right, input.int_value);
                         }
                         _ => panic!("Expected Expression Statement, got {:?}", expr),
                     },
