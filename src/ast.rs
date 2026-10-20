@@ -41,6 +41,7 @@ impl<'s> Node for Statement<'s> {
 pub(crate) enum Expression<'e> {
     Boolean(Boolean<'e>),
     Ident(Identifier<'e>),
+    IfExpr(IfExpression<'e>),
     InfixExpr(Infix<'e>),
     Integer(IntegerLiteral<'e>),
     PrefixExpr(Prefix<'e>),
@@ -51,6 +52,7 @@ impl<'e> Node for Expression<'e> {
         match self {
             Expression::Boolean(boolean) => boolean.token_literal(),
             Expression::Ident(identifier) => identifier.token_literal(),
+            Expression::IfExpr(if_expression) => if_expression.token_literal(),
             Expression::InfixExpr(infix) => infix.token_literal(),
             Expression::Integer(int) => int.token_literal(),
             Expression::PrefixExpr(prefix) => prefix.token_literal(),
@@ -61,6 +63,7 @@ impl<'e> Node for Expression<'e> {
         match self {
             Expression::Boolean(boolean) => boolean.string(),
             Expression::Ident(identifier) => identifier.string(),
+            Expression::IfExpr(if_expression) => if_expression.string(),
             Expression::InfixExpr(infix) => infix.string(),
             Expression::Integer(int) => int.string(),
             Expression::PrefixExpr(prefix) => prefix.string(),
@@ -101,7 +104,7 @@ impl<'p> Node for Program<'p> {
     }
 }
 
-/// Boolean types
+/// Boolean type
 #[derive(Debug)]
 pub(crate) struct Boolean<'b> {
     pub(crate) token: Token<'b>,
@@ -121,6 +124,29 @@ impl<'b> Node for Boolean<'b> {
     }
 }
 
+/// BlockStatement type inf the form of `{<statement_1>; ... <statement_n>;}`
+#[derive(Debug)]
+pub(crate) struct BlockStatement<'bs> {
+    pub(crate) token: Token<'bs>,
+    pub(crate) statements: Vec<Statement<'bs>>,
+}
+
+impl<'bs> Node for BlockStatement<'bs> {
+    fn token_literal(&self) -> &str {
+        self.token.literal
+    }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        for statement in &self.statements {
+            out.push_str(statement.string().as_str());
+        }
+
+        out
+    }
+}
+
 /// Expression types
 #[derive(Debug)]
 pub(crate) struct Identifier<'i> {
@@ -135,6 +161,37 @@ impl<'i> Node for Identifier<'i> {
 
     fn string(&self) -> String {
         self.value.to_string()
+    }
+}
+
+/// A binding for the if/else in the form of `if (<condition>) <consequence> else <alternative>`
+#[derive(Debug)]
+pub(crate) struct IfExpression<'ie> {
+    pub(crate) token: Token<'ie>,
+    pub(crate) condition: Box<Expression<'ie>>,
+    pub(crate) consequence: BlockStatement<'ie>,
+    pub(crate) alternative: Option<BlockStatement<'ie>>,
+}
+
+impl<'ie> Node for IfExpression<'ie> {
+    fn token_literal(&self) -> &str {
+        self.token.literal
+    }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        out.push_str("if");
+        out.push_str(self.condition.string().as_str());
+        out.push_str(" ");
+        out.push_str(self.consequence.string().as_str());
+
+        if let Some(alt) = &self.alternative {
+            out.push_str("else ");
+            out.push_str(alt.string().as_str());
+        }
+
+        out
     }
 }
 
