@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{
+        Boolean,
         Expression::{self, InfixExpr, PrefixExpr},
         Identifier, Infix, IntegerLiteral, LetStatement, Prefix, Program, ReturnStatement,
         Statement::{self, ExpressionStmt},
@@ -76,6 +77,9 @@ impl<'p> Parser<'p> {
         };
 
         // populate prefix parse fns
+        parser.register_prefix(TokenType::TRUE, Self::parse_boolean);
+        parser.register_prefix(TokenType::FALSE, Self::parse_boolean);
+        parser.register_prefix(TokenType::LPAREN, Self::parse_grouped_expression);
         parser.register_prefix(TokenType::IDENT, Self::parse_identifier);
         parser.register_prefix(TokenType::INT, Self::parse_integer);
         parser.register_prefix(TokenType::BANG, Self::parse_prefix);
@@ -185,6 +189,13 @@ impl<'p> Parser<'p> {
         }
     }
 
+    fn parse_boolean(&mut self) -> Option<Expression<'p>> {
+        Some(Expression::Boolean(Boolean {
+            token: self.curr_token.clone(),
+            value: self.curr_token_is(TokenType::TRUE),
+        }))
+    }
+
     fn parse_expression_statement(&mut self) -> Option<Statement<'p>> {
         let expr = self.parse_expression(Precedence::Lowest);
 
@@ -214,6 +225,17 @@ impl<'p> Parser<'p> {
         self.no_prefix_parse_fn_error(self.curr_token.token);
 
         None
+    }
+
+    fn parse_grouped_expression(&mut self) -> Option<Expression<'p>> {
+        self.next_token();
+        let expr = self.parse_expression(Precedence::Lowest);
+
+        if !self.expect_peek(TokenType::RPAREN) {
+            return None;
+        }
+
+        expr
     }
 
     fn parse_identifier(&mut self) -> Option<Expression<'p>> {
@@ -352,6 +374,36 @@ mod tests {
 
     use super::*;
 
+    #[derive(Debug, Clone, Copy)]
+    enum Value<'a> {
+        Int(i64),
+        Ident(&'a str),
+        Boolean(bool),
+    }
+
+    // These let callers pass plain values: test_infix_expression(&e, 5, "+", "x")
+    impl From<i64> for Value<'_> {
+        fn from(v: i64) -> Self {
+            Value::Int(v)
+        }
+    }
+    impl From<i32> for Value<'_> {
+        fn from(v: i32) -> Self {
+            Value::Int(v as i64)
+        }
+    }
+    impl<'a> From<&'a str> for Value<'a> {
+        fn from(v: &'a str) -> Self {
+            Value::Ident(v)
+        }
+    }
+
+    impl<'a> From<bool> for Value<'_> {
+        fn from(v: bool) -> Self {
+            Value::Boolean(v)
+        }
+    }
+
     fn check_for_parse_errors(p: &Parser) {
         let errors = p.errors();
 
@@ -367,6 +419,85 @@ mod tests {
         let p = Parser::new(lexer);
 
         p
+    }
+
+    fn test_boolean_literal(expr: &Expression, value: bool) {
+        match expr {
+            Expression::Boolean(boolean) => {
+                assert_eq!(boolean.value, value, "boolean mismatch");
+                assert_eq!(
+                    boolean.token_literal(),
+                    value.to_string(),
+                    "token literal mismatch"
+                );
+            }
+            other => panic!("exp is not Boolean. got={other:?}"),
+        }
+    }
+
+    fn test_identifier(expr: &Expression, value: &str) {
+        match expr {
+            Expression::Ident(identifier) => {
+                assert_eq!(identifier.value, value, "identifier mismatch");
+                assert_eq!(identifier.token_literal(), value, "token literal mismatch");
+            }
+            other => panic!("exp is not Identifier. got={other:?}"),
+        }
+    }
+
+    fn test_integer_literal(expr: &Expression, value: i64) {
+        match expr {
+            Expression::Integer(integer) => {
+                assert_eq!(integer.value, value, "integer value mismatch")
+            }
+            other => panic!("Expected Integer, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_boolean_expression() {
+        let input = r"true; false;";
+
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
+        check_for_parse_errors(&parser);
+
+        assert_eq!(program.statements.len(), 2);
+
+        let expected = [true, false];
+
+        for (stmt, exp) in program.statements.iter().zip(expected) {
+            match stmt {
+                Statement::ExpressionStmt(boolean) => {
+                    assert_eq!(boolean.string(), exp.to_string());
+                    assert_eq!(boolean.token_literal(), exp.to_string());
+                }
+                _ => panic!("Expected Boolean, got {:?}", stmt),
+            }
+        }
+    }
+
+    fn test_literal_expression<'a>(exp: &Expression, expected: impl Into<Value<'a>>) {
+        match expected.into() {
+            Value::Boolean(v) => test_boolean_literal(exp, v),
+            Value::Ident(v) => test_identifier(exp, v),
+            Value::Int(v) => test_integer_literal(exp, v),
+        }
+    }
+
+    fn test_infix_expression<'a>(
+        exp: &Expression,
+        left: impl Into<Value<'a>>,
+        operator: &str,
+        right: impl Into<Value<'a>>,
+    ) {
+        let Expression::InfixExpr(infix) = exp else {
+            panic!("exp is not InfixExpression. got={exp:?}");
+        };
+
+        test_literal_expression(&infix.left, left);
+        assert_eq!(infix.operator, operator, "exp.operator is not '{operator}'");
+        test_literal_expression(&infix.right, right);
     }
 
     #[test]
@@ -408,15 +539,6 @@ mod tests {
                 }
                 _ => panic!("Expected Integer, got {:?}", stmt),
             }
-        }
-    }
-
-    fn test_integer_literal(expr: Expression, value: i64) {
-        match expr {
-            Expression::Integer(integer) => {
-                assert_eq!(integer.value, value)
-            }
-            _ => panic!("Expected Integer, got {:?}", expr),
         }
     }
 
@@ -504,12 +626,50 @@ mod tests {
                 input: "3 + 4 * 5 == 3 * 1 + 4 * 5",
                 expected: "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
             },
+            OpPrecedenceInputs {
+                input: "true",
+                expected: "true",
+            },
+            OpPrecedenceInputs {
+                input: "false",
+                expected: "false",
+            },
+            OpPrecedenceInputs {
+                input: "3 > 5 == false",
+                expected: "((3 > 5) == false)",
+            },
+            OpPrecedenceInputs {
+                input: "3 < 5 == true",
+                expected: "((3 < 5) == true)",
+            },
+            OpPrecedenceInputs {
+                input: "1 + (2 + 3) + 4",
+                expected: "((1 + (2 + 3)) + 4)",
+            },
+            OpPrecedenceInputs {
+                input: "(5 + 5) * 2",
+                expected: "((5 + 5) * 2)",
+            },
+            OpPrecedenceInputs {
+                input: "2 / (5 + 5)",
+                expected: "(2 / (5 + 5))",
+            },
+            OpPrecedenceInputs {
+                input: "-(5 + 5)",
+                expected: "(-(5 + 5))",
+            },
+            OpPrecedenceInputs {
+                input: "!(true == true)",
+                expected: "(!(true == true))",
+            },
         ];
 
         for input in inputs {
             let mut parser = make_program(input.input);
             let program = parser.parse_program();
             check_for_parse_errors(&parser);
+
+            println!("{:?}\n\n", program.string());
 
             let actual = program.string();
             assert_eq!(actual, input.expected);
@@ -518,9 +678,9 @@ mod tests {
 
     struct InfixInputs<'pi> {
         input: &'pi str,
-        left_value: i64,
+        left_value: Value<'pi>,
         operator: &'pi str,
-        right_value: i64,
+        right_value: Value<'pi>,
     }
 
     #[test]
@@ -528,51 +688,69 @@ mod tests {
         let inputs = vec![
             InfixInputs {
                 input: "5 + 5",
-                left_value: 5,
+                left_value: Value::Int(5),
                 operator: "+",
-                right_value: 5,
+                right_value: Value::Int(5),
             },
             InfixInputs {
                 input: "5 - 5",
-                left_value: 5,
+                left_value: Value::Int(5),
                 operator: "-",
-                right_value: 5,
+                right_value: Value::Int(5),
             },
             InfixInputs {
                 input: "5 * 5",
-                left_value: 5,
+                left_value: Value::Int(5),
                 operator: "*",
-                right_value: 5,
+                right_value: Value::Int(5),
             },
             InfixInputs {
                 input: "5 / 5",
-                left_value: 5,
+                left_value: Value::Int(5),
                 operator: "/",
-                right_value: 5,
+                right_value: Value::Int(5),
             },
             InfixInputs {
                 input: "5 > 5",
-                left_value: 5,
+                left_value: Value::Int(5),
                 operator: ">",
-                right_value: 5,
+                right_value: Value::Int(5),
             },
             InfixInputs {
                 input: "5 < 5",
-                left_value: 5,
+                left_value: Value::Int(5),
                 operator: "<",
-                right_value: 5,
+                right_value: Value::Int(5),
             },
             InfixInputs {
                 input: "5 == 5",
-                left_value: 5,
+                left_value: Value::Int(5),
                 operator: "==",
-                right_value: 5,
+                right_value: Value::Int(5),
             },
             InfixInputs {
                 input: "5 != 5",
-                left_value: 5,
+                left_value: Value::Int(5),
                 operator: "!=",
-                right_value: 5,
+                right_value: Value::Int(5),
+            },
+            InfixInputs {
+                input: "true == true",
+                left_value: Value::Boolean(true),
+                operator: "==",
+                right_value: Value::Boolean(true),
+            },
+            InfixInputs {
+                input: "true != false",
+                left_value: Value::Boolean(true),
+                operator: "!=",
+                right_value: Value::Boolean(false),
+            },
+            InfixInputs {
+                input: "false == false",
+                left_value: Value::Boolean(false),
+                operator: "==",
+                right_value: Value::Boolean(false),
             },
         ];
 
@@ -587,9 +765,9 @@ mod tests {
                 match stmt {
                     Statement::ExpressionStmt(expr) => match expr {
                         Expression::InfixExpr(infix) => {
-                            test_integer_literal(*infix.left, input.left_value);
+                            test_literal_expression(&*infix.left, input.left_value);
                             assert_eq!(infix.operator, input.operator);
-                            test_integer_literal(*infix.right, input.right_value);
+                            test_literal_expression(&*infix.right, input.right_value);
                         }
                         _ => panic!("Expected Expression Statement, got {:?}", expr),
                     },
@@ -602,7 +780,7 @@ mod tests {
     struct PrefixInputs<'pi> {
         input: &'pi str,
         operator: &'pi str,
-        int_value: i64,
+        value: Value<'pi>,
     }
 
     #[test]
@@ -611,12 +789,22 @@ mod tests {
             PrefixInputs {
                 input: "!5",
                 operator: "!",
-                int_value: 5,
+                value: Value::Int(5),
             },
             PrefixInputs {
                 input: "-15",
                 operator: "-",
-                int_value: 15,
+                value: Value::Int(15),
+            },
+            PrefixInputs {
+                input: "!true",
+                operator: "!",
+                value: Value::Boolean(true),
+            },
+            PrefixInputs {
+                input: "!false",
+                operator: "!",
+                value: Value::Boolean(false),
             },
         ];
 
@@ -632,7 +820,7 @@ mod tests {
                     Statement::ExpressionStmt(expr) => match expr {
                         Expression::PrefixExpr(prefix) => {
                             assert_eq!(prefix.operator, input.operator);
-                            test_integer_literal(*prefix.right, input.int_value);
+                            test_literal_expression(&*prefix.right, input.value);
                         }
                         _ => panic!("Expected Expression Statement, got {:?}", expr),
                     },

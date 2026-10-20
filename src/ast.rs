@@ -39,6 +39,7 @@ impl<'s> Node for Statement<'s> {
 /// An expression: a construct that produces a value (e.g. `5`, `add(1, 2)`).
 #[derive(Debug)]
 pub(crate) enum Expression<'e> {
+    Boolean(Boolean<'e>),
     Ident(Identifier<'e>),
     InfixExpr(Infix<'e>),
     Integer(IntegerLiteral<'e>),
@@ -48,6 +49,7 @@ pub(crate) enum Expression<'e> {
 impl<'e> Node for Expression<'e> {
     fn token_literal(&self) -> &str {
         match self {
+            Expression::Boolean(boolean) => boolean.token_literal(),
             Expression::Ident(identifier) => identifier.token_literal(),
             Expression::InfixExpr(infix) => infix.token_literal(),
             Expression::Integer(int) => int.token_literal(),
@@ -57,6 +59,7 @@ impl<'e> Node for Expression<'e> {
 
     fn string(&self) -> String {
         match self {
+            Expression::Boolean(boolean) => boolean.string(),
             Expression::Ident(identifier) => identifier.string(),
             Expression::InfixExpr(infix) => infix.string(),
             Expression::Integer(int) => int.string(),
@@ -95,6 +98,26 @@ impl<'p> Node for Program<'p> {
         }
 
         out
+    }
+}
+
+/// Boolean types
+#[derive(Debug)]
+pub(crate) struct Boolean<'b> {
+    pub(crate) token: Token<'b>,
+    pub(crate) value: bool,
+}
+
+impl<'b> Node for Boolean<'b> {
+    fn token_literal(&self) -> &str {
+        self.token.literal
+    }
+
+    fn string(&self) -> String {
+        match self.value {
+            true => "true".to_string(),
+            false => "false".to_string(),
+        }
     }
 }
 
@@ -259,6 +282,10 @@ mod tests {
         };
 
         // TODO: Add the value for the right side of the statement
-        assert_eq!(program.string(), "let myVar = ;".to_string())
+        assert_eq!(
+            program.string(),
+            "let myVar = ;".to_string(),
+            "program mismatch"
+        )
     }
 }
