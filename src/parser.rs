@@ -6,13 +6,13 @@ use crate::{
     ast::{
         BlockStatement, Boolean,
         Expression::{self, InfixExpr, PrefixExpr},
-        Identifier, IfExpression, Infix, IntegerLiteral, LetStatement, Prefix, Program,
-        ReturnStatement,
+        FunctionLiteral, Identifier, IfExpression, Infix, IntegerLiteral, LetStatement, Prefix,
+        Program, ReturnStatement,
         Statement::{self, ExpressionStmt},
     },
     lexer::Lexer,
     token::{
-        self, Token,
+        Token,
         TokenType::{self, ASSIGN},
     },
 };
@@ -80,6 +80,7 @@ impl<'p> Parser<'p> {
         // populate prefix parse fns
         parser.register_prefix(TokenType::TRUE, Self::parse_boolean);
         parser.register_prefix(TokenType::FALSE, Self::parse_boolean);
+        parser.register_prefix(TokenType::FUNCTION, Self::parse_function_literal);
         parser.register_prefix(TokenType::LPAREN, Self::parse_grouped_expression);
         parser.register_prefix(TokenType::IDENT, Self::parse_identifier);
         parser.register_prefix(TokenType::IF, Self::parse_if_expression);
@@ -247,6 +248,64 @@ impl<'p> Parser<'p> {
         self.no_prefix_parse_fn_error(self.curr_token.token);
 
         None
+    }
+
+    fn parse_function_literal(&mut self) -> Option<Expression<'p>> {
+        let curr = self.curr_token.clone();
+
+        if !self.expect_peek(TokenType::LPAREN) {
+            return None;
+        }
+
+        let parameters = self.parse_function_parameters();
+
+        if !self.expect_peek(TokenType::LBRACE) {
+            return None;
+        }
+
+        let body = self.parse_block_statement();
+
+        Some(Expression::Function(FunctionLiteral {
+            token: curr,
+            parameters,
+            body,
+        }))
+    }
+
+    fn parse_function_parameters(&mut self) -> Vec<Expression<'p>> {
+        let mut parameters = Vec::new();
+
+        if self.peek_token_is(TokenType::RPAREN) {
+            self.next_token();
+            return parameters;
+        }
+
+        self.next_token();
+
+        let ident = Identifier {
+            token: self.curr_token.clone(),
+            value: self.curr_token.literal,
+        };
+
+        parameters.push(Expression::Ident(ident));
+
+        while self.peek_token_is(TokenType::COMMA) {
+            self.next_token();
+            self.next_token();
+
+            let ident = Identifier {
+                token: self.curr_token.clone(),
+                value: self.curr_token.literal,
+            };
+
+            parameters.push(Expression::Ident(ident));
+        }
+
+        if !self.expect_peek(TokenType::RPAREN) {
+            return Vec::new();
+        }
+
+        parameters
     }
 
     fn parse_grouped_expression(&mut self) -> Option<Expression<'p>> {
@@ -439,6 +498,11 @@ mod tests {
 
     use super::*;
 
+    struct InputExpected<'ie, T> {
+        input: &'ie str,
+        expected: T,
+    }
+
     #[derive(Debug, Clone, Copy)]
     enum Value<'a> {
         Int(i64),
@@ -519,6 +583,29 @@ mod tests {
         }
     }
 
+    fn test_literal_expression<'a>(exp: &Expression, expected: impl Into<Value<'a>>) {
+        match expected.into() {
+            Value::Boolean(v) => test_boolean_literal(exp, v),
+            Value::Ident(v) => test_identifier(exp, v),
+            Value::Int(v) => test_integer_literal(exp, v),
+        }
+    }
+
+    fn test_infix_expression<'a>(
+        exp: &Expression,
+        left: impl Into<Value<'a>>,
+        operator: &str,
+        right: impl Into<Value<'a>>,
+    ) {
+        let Expression::InfixExpr(infix) = exp else {
+            panic!("exp is not InfixExpression. got={exp:?}");
+        };
+
+        test_literal_expression(&infix.left, left);
+        assert_eq!(infix.operator, operator, "exp.operator is not '{operator}'");
+        test_literal_expression(&infix.right, right);
+    }
+
     #[test]
     fn test_boolean_expression() {
         let input = r"true; false;";
@@ -542,27 +629,94 @@ mod tests {
         }
     }
 
-    fn test_literal_expression<'a>(exp: &Expression, expected: impl Into<Value<'a>>) {
-        match expected.into() {
-            Value::Boolean(v) => test_boolean_literal(exp, v),
-            Value::Ident(v) => test_identifier(exp, v),
-            Value::Int(v) => test_integer_literal(exp, v),
+    #[test]
+    fn test_function_literal() {
+        let input = "fn(x, y) { x + y; }";
+
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
+        check_for_parse_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        for stmt in program.statements {
+            assert!(stmt.token_literal() == "fn");
+
+            match stmt {
+                Statement::ExpressionStmt(func) => match func {
+                    Expression::Function(func_literal) => {
+                        // test parameters
+                        assert_eq!(func_literal.parameters.len(), 2, "Expected 2 parameters");
+                        test_literal_expression(func_literal.parameters.get(0).unwrap(), "x");
+                        test_literal_expression(func_literal.parameters.get(1).unwrap(), "y");
+
+                        // test body statements
+                        assert_eq!(
+                            func_literal.body.statements.len(),
+                            1,
+                            "Expected 1 block statement"
+                        );
+
+                        let expr = match func_literal.body.statements.first().unwrap() {
+                            ExpressionStmt(expression) => expression,
+                            other => panic!("Expected body statement, got {other:?}"),
+                        };
+
+                        test_infix_expression(expr, "x", "+", "y");
+                    }
+                    other => panic!("Expected if expression, got {other:?}"),
+                },
+                _ => panic!("Expected Function Expression, got {:?}", stmt),
+            }
         }
     }
 
-    fn test_infix_expression<'a>(
-        exp: &Expression,
-        left: impl Into<Value<'a>>,
-        operator: &str,
-        right: impl Into<Value<'a>>,
-    ) {
-        let Expression::InfixExpr(infix) = exp else {
-            panic!("exp is not InfixExpression. got={exp:?}");
-        };
+    #[test]
+    fn test_function_parameter_parsing() {
+        let tests = vec![
+            InputExpected::<Vec<&str>> {
+                input: "fn() {};",
+                expected: vec![],
+            },
+            InputExpected::<Vec<&str>> {
+                input: "fn(x) {};",
+                expected: vec!["x"],
+            },
+            InputExpected::<Vec<&str>> {
+                input: "fn(x, y, z) {};",
+                expected: vec!["x", "y", "z"],
+            },
+        ];
 
-        test_literal_expression(&infix.left, left);
-        assert_eq!(infix.operator, operator, "exp.operator is not '{operator}'");
-        test_literal_expression(&infix.right, right);
+        for ie in tests {
+            let mut parser = make_program(ie.input);
+            let program = parser.parse_program();
+            check_for_parse_errors(&parser);
+
+            for stmt in program.statements {
+                assert!(stmt.token_literal() == "fn");
+
+                match stmt {
+                    Statement::ExpressionStmt(func) => match func {
+                        Expression::Function(func_literal) => {
+                            // test parameters
+                            assert_eq!(
+                                func_literal.parameters.len(),
+                                ie.expected.len(),
+                                "{}",
+                                format!("Expected {} parameters", ie.expected.len())
+                            );
+
+                            for (p, e) in func_literal.parameters.iter().zip(&ie.expected) {
+                                test_literal_expression(p, *e);
+                            }
+                        }
+                        other => panic!("Expected if expression, got {other:?}"),
+                    },
+                    _ => panic!("Expected Function Expression, got {:?}", stmt),
+                }
+            }
+        }
     }
 
     #[test]
@@ -733,101 +887,96 @@ mod tests {
         }
     }
 
-    struct OpPrecedenceInputs<'opi> {
-        input: &'opi str,
-        expected: &'opi str,
-    }
-
     #[test]
     fn test_operator_precedence_parsing() {
-        let inputs = vec![
-            OpPrecedenceInputs {
+        let tests = vec![
+            InputExpected {
                 input: "-a * b",
                 expected: "((-a) * b)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "!-a",
                 expected: "(!(-a))",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "a + b + c",
                 expected: "((a + b) + c)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "a + b - c",
                 expected: "((a + b) - c)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "a * b * c",
                 expected: "((a * b) * c)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "a * b / c",
                 expected: "((a * b) / c)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "a + b / c",
                 expected: "(a + (b / c))",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "a + b * c + d / e - f",
                 expected: "(((a + (b * c)) + (d / e)) - f)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "3 + 4; -5 * 5",
                 expected: "(3 + 4)((-5) * 5)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "5 > 4 == 3 < 4",
                 expected: "((5 > 4) == (3 < 4))",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "5 > 4 != 3 > 4",
                 expected: "((5 > 4) != (3 > 4))",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "3 + 4 * 5 == 3 * 1 + 4 * 5",
                 expected: "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "true",
                 expected: "true",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "false",
                 expected: "false",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "3 > 5 == false",
                 expected: "((3 > 5) == false)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "3 < 5 == true",
                 expected: "((3 < 5) == true)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "1 + (2 + 3) + 4",
                 expected: "((1 + (2 + 3)) + 4)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "(5 + 5) * 2",
                 expected: "((5 + 5) * 2)",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "2 / (5 + 5)",
                 expected: "(2 / (5 + 5))",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "-(5 + 5)",
                 expected: "(-(5 + 5))",
             },
-            OpPrecedenceInputs {
+            InputExpected {
                 input: "!(true == true)",
                 expected: "(!(true == true))",
             },
         ];
 
-        for input in inputs {
+        for input in tests {
             let mut parser = make_program(input.input);
             let program = parser.parse_program();
             check_for_parse_errors(&parser);
