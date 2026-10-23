@@ -123,7 +123,7 @@ impl<'p> Parser<'p> {
 
     fn peek_error(&mut self, token: TokenType) {
         self.errors.push(format!(
-            "expected next token to be {:?}, got {:?} instead",
+            "expected next token to be {}, got {} instead",
             token, self.peek_token.token
         ));
     }
@@ -451,7 +451,7 @@ impl<'p> Parser<'p> {
                 value: Box::new(value),
             };
 
-            while !self.curr_token_is(TokenType::SEMICOLON) {
+            if self.peek_token_is(TokenType::SEMICOLON) {
                 self.next_token();
             }
 

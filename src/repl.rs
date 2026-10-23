@@ -2,9 +2,22 @@
 
 use std::io::{self, BufRead, Write};
 
-use crate::{lexer::Lexer, token::TokenType};
+use crate::{ast::Node, lexer::Lexer, parser::Parser};
 
 const PROMPT: &str = ">> ";
+
+const MONKEY_FACE: &str = r#"
+            __,__
+   .--.  .-"     "-.  .--.
+  / .. \/  .-. .-.  \/ .. \
+ | |  '|  /   Y   \  |'  | |
+ | \   \  \ 0 | 0 /  /   / |
+  \ '- ,\.-"""""""-./, -' /
+   ''-' /_   ^ ^   _\ '-''
+       |  \._   _./  |
+       \   \ '~' /   /
+        '._ '-=-' _.'
+           '-----'"#;
 
 /// Runs the REPL, reading lines from `input` and writing results to `out`.
 ///
@@ -23,12 +36,22 @@ pub(crate) fn start<R: BufRead, W: Write>(mut input: R, mut out: W) -> io::Resul
         }
 
         // Print every token on the line until the lexer reaches the end.
-        let mut lexer = Lexer::new(&buff);
-        let mut token = lexer.next_token();
-        while token.token != TokenType::EOF {
-            writeln!(out, "{:?}", token)?;
-            token = lexer.next_token();
+        let lexer = Lexer::new(&buff);
+        let mut parser = Parser::new(lexer);
+        let program = parser.parse_program();
+
+        if parser.errors().len() != 0 {
+            let _ = writeln!(out, "{}", MONKEY_FACE);
+            let _ = writeln!(out, "Woops! We ran into some monkey business here!");
+            let _ = writeln!(out, "*** parser errors:");
+
+            for err in parser.errors() {
+                let _ = writeln!(out, "\t{}", err);
+            }
         }
+
+        let _ = writeln!(out, "{}", program.string());
+        let _ = writeln!(out, "");
     }
 
     Ok(())
