@@ -4,13 +4,12 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{
-        BlockStatement, Boolean,
-        Expression::{self, InfixExpr, PrefixExpr},
-        FunctionLiteral, Identifier, IfExpression, Infix, IntegerLiteral, LetStatement, Prefix,
-        Program, ReturnStatement,
+        BlockStatement, Boolean, CallExpression, Expression, FunctionLiteral, Identifier,
+        IfExpression, Infix, IntegerLiteral, LetStatement, Prefix, Program, ReturnStatement,
         Statement::{self, ExpressionStmt},
     },
     lexer::Lexer,
+    parser::Precedence::Lowest,
     token::{
         Token,
         TokenType::{self, ASSIGN},
@@ -39,6 +38,7 @@ fn map_precedence(token: TokenType) -> Precedence {
         TokenType::GT => Precedence::LessGreater,
         TokenType::EQ => Precedence::Equals,
         TokenType::NEQ => Precedence::Equals,
+        TokenType::LPAREN => Precedence::Call,
         _ => Precedence::Lowest,
     }
 }
@@ -97,6 +97,7 @@ impl<'p> Parser<'p> {
         parser.register_infix(TokenType::GT, Self::parse_infix);
         parser.register_infix(TokenType::EQ, Self::parse_infix);
         parser.register_infix(TokenType::NEQ, Self::parse_infix);
+        parser.register_infix(TokenType::LPAREN, Self::parse_call_expression);
 
         parser
     }
@@ -217,6 +218,52 @@ impl<'p> Parser<'p> {
             token: self.curr_token.clone(),
             value: self.curr_token_is(TokenType::TRUE),
         }))
+    }
+
+    fn parse_call_expression(
+        &mut self,
+        function: Option<Expression<'p>>,
+    ) -> Option<Expression<'p>> {
+        let curr = self.curr_token.clone();
+        let arguments = self.parse_call_arguments().unwrap_or(vec![]);
+
+        if let Some(func) = function {
+            return Some(Expression::Call(CallExpression {
+                token: curr,
+                function: Box::new(func),
+                arguments,
+            }));
+        }
+
+        None
+    }
+
+    fn parse_call_arguments(&mut self) -> Option<Vec<Expression<'p>>> {
+        let mut args = vec![];
+
+        if self.peek_token_is(TokenType::RPAREN) {
+            self.next_token();
+            return Some(args);
+        }
+
+        self.next_token();
+        if let Some(arg) = self.parse_expression(Lowest) {
+            args.push(arg);
+        }
+
+        while self.peek_token_is(TokenType::COMMA) {
+            self.next_token();
+            self.next_token();
+            if let Some(arg) = self.parse_expression(Lowest) {
+                args.push(arg);
+            }
+        }
+
+        if !self.expect_peek(TokenType::RPAREN) {
+            return None;
+        }
+
+        Some(args)
     }
 
     fn parse_expression_statement(&mut self) -> Option<Statement<'p>> {
@@ -375,7 +422,7 @@ impl<'p> Parser<'p> {
             let precedence = self.curr_precedence();
             self.next_token();
             if let Some(right_expr) = self.parse_expression(precedence) {
-                return Some(InfixExpr(Infix {
+                return Some(Expression::InfixExpr(Infix {
                     token: token.clone(),
                     left: Box::new(left_expr),
                     operator: token.literal,
@@ -443,13 +490,11 @@ impl<'p> Parser<'p> {
         self.next_token();
 
         if let Some(right) = self.parse_expression(Precedence::Prefix) {
-            let expr = PrefixExpr(Prefix {
+            return Some(Expression::PrefixExpr(Prefix {
                 token: token.clone(),
                 operator: token.literal,
                 right: Box::new(right),
-            });
-
-            return Some(expr);
+            }));
         }
 
         None
@@ -625,6 +670,33 @@ mod tests {
                     assert_eq!(boolean.token_literal(), exp.to_string());
                 }
                 _ => panic!("Expected Boolean, got {:?}", stmt),
+            }
+        }
+    }
+
+    #[test]
+    fn test_call_expression_parsing() {
+        let input = "add(1, 2 * 3, 4 + 5);";
+
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
+        check_for_parse_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        for stmt in program.statements {
+            match stmt {
+                Statement::ExpressionStmt(call) => match call {
+                    Expression::Call(call_expr) => {
+                        test_identifier(&*call_expr.function, "add");
+                        assert_eq!(call_expr.arguments.len(), 3);
+                        test_literal_expression(call_expr.arguments.get(0).unwrap(), 1);
+                        test_infix_expression(call_expr.arguments.get(1).unwrap(), 2, "*", 3);
+                        test_infix_expression(call_expr.arguments.get(2).unwrap(), 4, "+", 5);
+                    }
+                    other => panic!("Expected Call Expression, got {other:?}"),
+                },
+                _ => panic!("Expected Call Statement, got {:?}", stmt),
             }
         }
     }
@@ -973,6 +1045,18 @@ mod tests {
             InputExpected {
                 input: "!(true == true)",
                 expected: "(!(true == true))",
+            },
+            InputExpected {
+                input: "a + add(b * c) + d",
+                expected: "((a + add((b * c))) + d)",
+            },
+            InputExpected {
+                input: "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+                expected: "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+            },
+            InputExpected {
+                input: "add(a + b + c * d / f + g)",
+                expected: "add((((a + b) + ((c * d) / f)) + g))",
             },
         ];
 

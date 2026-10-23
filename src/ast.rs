@@ -40,6 +40,7 @@ impl<'s> Node for Statement<'s> {
 #[derive(Debug)]
 pub(crate) enum Expression<'e> {
     Boolean(Boolean<'e>),
+    Call(CallExpression<'e>),
     Function(FunctionLiteral<'e>),
     Ident(Identifier<'e>),
     IfExpr(IfExpression<'e>),
@@ -52,6 +53,7 @@ impl<'e> Node for Expression<'e> {
     fn token_literal(&self) -> &str {
         match self {
             Expression::Boolean(boolean) => boolean.token_literal(),
+            Expression::Call(call_expression) => call_expression.token_literal(),
             Expression::Function(function_literal) => function_literal.token_literal(),
             Expression::Ident(identifier) => identifier.token_literal(),
             Expression::IfExpr(if_expression) => if_expression.token_literal(),
@@ -64,6 +66,7 @@ impl<'e> Node for Expression<'e> {
     fn string(&self) -> String {
         match self {
             Expression::Boolean(boolean) => boolean.string(),
+            Expression::Call(call_expression) => call_expression.string(),
             Expression::Function(function_literal) => function_literal.string(),
             Expression::Ident(identifier) => identifier.string(),
             Expression::IfExpr(if_expression) => if_expression.string(),
@@ -150,6 +153,38 @@ impl<'bs> Node for BlockStatement<'bs> {
     }
 }
 
+/// Call Expression in the form of `<expression>(<comma separated expressions>);`
+#[derive(Debug)]
+pub(crate) struct CallExpression<'ce> {
+    pub(crate) token: Token<'ce>,
+    pub(crate) function: Box<Expression<'ce>>,
+    pub(crate) arguments: Vec<Expression<'ce>>,
+}
+
+impl<'ce> Node for CallExpression<'ce> {
+    fn token_literal(&self) -> &str {
+        self.token.literal
+    }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        out.push_str(self.function.string().as_str());
+        out.push('(');
+        out.push_str(
+            &self
+                .arguments
+                .iter()
+                .map(|a| a.string())
+                .collect::<Vec<String>>()
+                .join(", "),
+        );
+        out.push(')');
+
+        out
+    }
+}
+
 /// Function Literal in the form of `fn(<param>) { <blockstatements> }`
 /// Function are a first class type so you can do something like
 /// 'let myFunc = fn(...) { ... }` or `fn() { return fn(...) { ... } }`
@@ -169,7 +204,7 @@ impl<'fl> Node for FunctionLiteral<'fl> {
         let mut out = String::new();
 
         out.push_str(self.token_literal());
-        out.push_str("(");
+        out.push('(');
         out.push_str(
             &self
                 .parameters
@@ -178,7 +213,7 @@ impl<'fl> Node for FunctionLiteral<'fl> {
                 .collect::<Vec<String>>()
                 .join(", "),
         );
-        out.push_str(")");
+        out.push(')');
         out.push_str(self.body.string().as_str());
 
         out
@@ -221,7 +256,7 @@ impl<'ie> Node for IfExpression<'ie> {
 
         out.push_str("if");
         out.push_str(self.condition.string().as_str());
-        out.push_str(" ");
+        out.push(' ');
         out.push_str(self.consequence.string().as_str());
 
         if let Some(alt) = &self.alternative {
@@ -250,13 +285,13 @@ impl<'i> Node for Infix<'i> {
     fn string(&self) -> String {
         let mut out = String::new();
 
-        out.push_str("(");
+        out.push('(');
         out.push_str(self.left.string().as_str());
-        out.push_str(" ");
+        out.push(' ');
         out.push_str(self.operator);
-        out.push_str(" ");
+        out.push(' ');
         out.push_str(self.right.string().as_str());
-        out.push_str(")");
+        out.push(')');
 
         out
     }
@@ -298,7 +333,7 @@ impl<'l> Node for LetStatement<'l> {
         out.push_str(&self.name.string());
         out.push_str(" = ");
 
-        out.push_str(";");
+        out.push(';');
 
         out
     }
@@ -320,10 +355,10 @@ impl<'p> Node for Prefix<'p> {
     fn string(&self) -> String {
         let mut out = String::new();
 
-        out.push_str("(");
+        out.push('(');
         out.push_str(self.operator);
         out.push_str(self.right.string().as_str());
-        out.push_str(")");
+        out.push(')');
 
         out
     }
@@ -345,7 +380,7 @@ impl<'r> Node for ReturnStatement<'r> {
     fn string(&self) -> String {
         let mut out = "return".to_string();
 
-        out.push_str(";");
+        out.push(';');
 
         out
     }
