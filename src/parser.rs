@@ -9,7 +9,6 @@ use crate::{
         Statement::{self, ExpressionStmt},
     },
     lexer::Lexer,
-    parser::Precedence::Lowest,
     token::{
         Token,
         TokenType::{self, ASSIGN},
@@ -25,7 +24,7 @@ pub(crate) enum Precedence {
     Product,     // *
     Prefix,      // -X or !X
     Call,        // myFunc(X)
-    Index,       // array[idx]
+                 // Index,       // array[idx]
 }
 
 fn map_precedence(token: TokenType) -> Precedence {
@@ -162,32 +161,7 @@ impl<'p> Parser<'p> {
     /// Dispatches on the current token.
     fn parse_statement(&mut self) -> Option<Statement<'p>> {
         match self.curr_token.token {
-            // TokenType::ILLEGAL => todo!(),
-            // TokenType::EOF => todo!(),
-            // TokenType::IDENT => todo!(),
-            // TokenType::INT => todo!(),
-            // TokenType::ASSIGN => todo!(),
-            // TokenType::PLUS => todo!(),
-            // TokenType::MINUS => todo!(),
-            // TokenType::BANG => todo!(),
-            // TokenType::ASTERISK => todo!(),
-            // TokenType::SLASH => todo!(),
-            // TokenType::LT => todo!(),
-            // TokenType::GT => todo!(),
-            // TokenType::EQ => todo!(),
-            // TokenType::NEQ => todo!(),
-            // TokenType::COMMA => todo!(),
-            // TokenType::SEMICOLON => todo!(),
-            // TokenType::LPAREN => todo!(),
-            // TokenType::RPAREN => todo!(),
-            // TokenType::LBRACE => todo!(),
-            // TokenType::RBRACE => todo!(),
-            // TokenType::FUNCTION => todo!(),
             TokenType::LET => self.parse_let_statement(),
-            // TokenType::TRUE => todo!(),
-            // TokenType::FALSE => todo!(),
-            // TokenType::IF => todo!(),
-            // TokenType::ELSE => todo!(),
             TokenType::RETURN => self.parse_return_statement(),
             _ => self.parse_expression_statement(),
         }
@@ -247,14 +221,14 @@ impl<'p> Parser<'p> {
         }
 
         self.next_token();
-        if let Some(arg) = self.parse_expression(Lowest) {
+        if let Some(arg) = self.parse_expression(Precedence::Lowest) {
             args.push(arg);
         }
 
         while self.peek_token_is(TokenType::COMMA) {
             self.next_token();
             self.next_token();
-            if let Some(arg) = self.parse_expression(Lowest) {
+            if let Some(arg) = self.parse_expression(Precedence::Lowest) {
                 args.push(arg);
             }
         }
@@ -464,23 +438,27 @@ impl<'p> Parser<'p> {
             value: self.curr_token.literal,
         };
 
-        let stmt = LetStatement {
-            token: curr_token,
-            name: identifier,
-            // value: Box::new({}),
-        };
-
         if !self.expect_peek(ASSIGN) {
             return None;
         }
 
-        // TODO: We're skipping the expressions until we
-        // encounter a semicolon
-        while !self.curr_token_is(TokenType::SEMICOLON) {
-            self.next_token();
+        self.next_token();
+
+        if let Some(value) = self.parse_expression(Precedence::Lowest) {
+            let stmt = LetStatement {
+                token: curr_token,
+                name: identifier,
+                value: Box::new(value),
+            };
+
+            while !self.curr_token_is(TokenType::SEMICOLON) {
+                self.next_token();
+            }
+
+            return Some(Statement::Let(stmt));
         }
 
-        Some(Statement::Let(stmt))
+        None
     }
 
     /// Parses `!5` and `-15` expression starting with `curr_token` on the prefix
@@ -502,20 +480,24 @@ impl<'p> Parser<'p> {
 
     /// Parses `return <expr>;`, starting with `curr_token` on `return`.
     fn parse_return_statement(&mut self) -> Option<Statement<'p>> {
-        let curr_token = self.curr_token.clone();
+        let curr = self.curr_token.clone();
 
-        let stmt = ReturnStatement {
-            token: curr_token,
-            // value: Box<Expression>
-        };
+        self.next_token();
 
-        // TODO: We're skipping the expressions until we
-        // encounter a semicolon
-        while !self.curr_token_is(TokenType::SEMICOLON) {
-            self.next_token();
+        if let Some(value) = self.parse_expression(Precedence::Lowest) {
+            let stmt = ReturnStatement {
+                token: curr,
+                value: Box::new(value),
+            };
+
+            if self.peek_token_is(TokenType::SEMICOLON) {
+                self.next_token();
+            }
+
+            return Some(Statement::Return(stmt));
         }
 
-        Some(Statement::Return(stmt))
+        None
     }
 
     fn peek_precedence(&self) -> Precedence {
@@ -538,6 +520,7 @@ impl<'p> Parser<'p> {
 #[cfg(test)]
 mod tests {
     use core::panic;
+    use std::vec;
 
     use crate::ast::{Node, Statement};
 
@@ -545,6 +528,12 @@ mod tests {
 
     struct InputExpected<'ie, T> {
         input: &'ie str,
+        expected: T,
+    }
+
+    struct LetTestData<'ltd, T> {
+        input: &'ltd str,
+        expected_ident: &'ltd str,
         expected: T,
     }
 
@@ -933,30 +922,58 @@ mod tests {
 
     #[test]
     fn test_let_statements() {
-        let input = r"
-            let x = 5;
-            let y = 10;
-            let foobar = 838383;";
+        let tests = vec![
+            LetTestData {
+                input: "let x = 5;",
+                expected_ident: "x",
+                expected: Value::Int(5),
+            },
+            LetTestData {
+                input: "let y = 10;",
+                expected_ident: "y",
+                expected: Value::Int(10),
+            },
+            LetTestData {
+                input: "let foobar = 838388;",
+                expected_ident: "foobar",
+                expected: Value::Int(838388),
+            },
+            LetTestData {
+                input: "let y = true;",
+                expected_ident: "y",
+                expected: Value::Boolean(true),
+            },
+            LetTestData {
+                input: "let foobar = y;",
+                expected_ident: "foobar",
+                expected: Value::Ident("y"),
+            },
+        ];
 
-        let mut parser = make_program(input);
-        let program = parser.parse_program();
-        check_for_parse_errors(&parser);
+        for test in tests {
+            let mut parser = make_program(test.input);
+            let program = parser.parse_program();
+            check_for_parse_errors(&parser);
 
-        assert_eq!(program.statements.len(), 3);
+            assert_eq!(program.statements.len(), 1);
 
-        let expected = vec!["x".to_string(), "y".to_string(), "foobar".to_string()];
+            for stmt in program.statements {
+                assert!(stmt.token_literal() == "let");
 
-        for (stmt, expected) in program.statements.iter().zip(expected) {
-            assert!(stmt.token_literal() == "let");
-
-            match stmt {
-                Statement::Let(let_stmt) => {
-                    assert_eq!(let_stmt.name.value, expected);
-                    assert_eq!(let_stmt.name.token_literal(), expected);
-                }
-                _ => panic!("Expected let statement, got {:?}", stmt),
-            };
+                match stmt {
+                    Statement::Let(let_stmt) => {
+                        test_let_statement(&let_stmt, test.expected_ident);
+                        test_literal_expression(&let_stmt.value, test.expected);
+                    }
+                    _ => panic!("Expected let statement, got {:?}", stmt),
+                };
+            }
         }
+    }
+
+    fn test_let_statement(stmt: &LetStatement, name: &str) {
+        assert_eq!(stmt.name.value, name);
+        assert_eq!(stmt.name.token_literal(), name)
     }
 
     #[test]

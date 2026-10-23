@@ -319,8 +319,7 @@ impl<'i> Node for IntegerLiteral<'i> {
 pub(crate) struct LetStatement<'l> {
     pub(crate) token: Token<'l>,
     pub(crate) name: Identifier<'l>,
-    // TODO: store the bound expression once expression parsing exists.
-    // pub(crate) value: Box<dyn Expression>,
+    pub(crate) value: Box<Expression<'l>>,
 }
 
 impl<'l> Node for LetStatement<'l> {
@@ -332,6 +331,7 @@ impl<'l> Node for LetStatement<'l> {
         let mut out = "let ".to_string();
         out.push_str(&self.name.string());
         out.push_str(" = ");
+        out.push_str(&self.value.string());
 
         out.push(';');
 
@@ -368,8 +368,7 @@ impl<'p> Node for Prefix<'p> {
 #[derive(Debug)]
 pub(crate) struct ReturnStatement<'r> {
     pub(crate) token: Token<'r>,
-    // TODO: store the bound expression once expression parsing exists.
-    // pub(crate) value: Expression,
+    pub(crate) value: Box<Expression<'r>>,
 }
 
 impl<'r> Node for ReturnStatement<'r> {
@@ -378,8 +377,9 @@ impl<'r> Node for ReturnStatement<'r> {
     }
 
     fn string(&self) -> String {
-        let mut out = "return".to_string();
+        let mut out = "return ".to_string();
 
+        out.push_str(&self.value.string());
         out.push(';');
 
         out
@@ -408,13 +408,19 @@ mod tests {
                     },
                     value: "myVar",
                 },
+                value: Box::new(Expression::Integer(IntegerLiteral {
+                    token: Token {
+                        token: TokenType::INT,
+                        literal: "5",
+                    },
+                    value: 5,
+                })),
             })],
         };
 
-        // TODO: Add the value for the right side of the statement
         assert_eq!(
             program.string(),
-            "let myVar = ;".to_string(),
+            "let myVar = 5;".to_string(),
             "program mismatch"
         )
     }
