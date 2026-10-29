@@ -522,7 +522,7 @@ mod tests {
     use core::panic;
     use std::vec;
 
-    use crate::ast::{Node, Statement};
+    use crate::ast::{NodeType, Statement};
 
     use super::*;
 

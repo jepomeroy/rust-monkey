@@ -2,7 +2,13 @@
 
 use std::io::{self, BufRead, Write};
 
-use crate::{ast::Node, lexer::Lexer, parser::Parser};
+use crate::{
+    ast::{Node::ProgramNode, NodeType},
+    evaluator::eval,
+    lexer::Lexer,
+    object::{Object, ObjectType::Null},
+    parser::Parser,
+};
 
 const PROMPT: &str = ">> ";
 
@@ -50,8 +56,11 @@ pub(crate) fn start<R: BufRead, W: Write>(mut input: R, mut out: W) -> io::Resul
             }
         }
 
-        let _ = writeln!(out, "{}", program.string());
-        let _ = writeln!(out, "");
+        let evaluated = eval(&ProgramNode(program));
+
+        // if evaluated != Null {
+        let _ = writeln!(out, "{}", evaluated.inspect());
+        // }
     }
 
     Ok(())

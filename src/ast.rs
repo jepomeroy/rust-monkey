@@ -2,8 +2,15 @@
 
 use crate::token::Token;
 
-/// Common interface for every node in the AST.
-pub(crate) trait Node {
+pub(crate) enum Node<'n> {
+    StatementNode(Statement<'n>),
+    ExpressionNode(Expression<'n>),
+    BlockStatementNode(BlockStatement<'n>),
+    ProgramNode(Program<'n>),
+}
+
+// Common interface for every node in the AST.
+pub(crate) trait NodeType {
     /// The literal text of the token this node is associated with.
     /// Used mainly for debugging and testing.
     fn token_literal(&self) -> &str;
@@ -18,7 +25,7 @@ pub(crate) enum Statement<'s> {
     ExpressionStmt(Expression<'s>),
 }
 
-impl<'s> Node for Statement<'s> {
+impl<'s> NodeType for Statement<'s> {
     fn token_literal(&self) -> &str {
         match self {
             Statement::Let(s) => s.token_literal(),
@@ -49,7 +56,7 @@ pub(crate) enum Expression<'e> {
     PrefixExpr(Prefix<'e>),
 }
 
-impl<'e> Node for Expression<'e> {
+impl<'e> NodeType for Expression<'e> {
     fn token_literal(&self) -> &str {
         match self {
             Expression::Boolean(boolean) => boolean.token_literal(),
@@ -89,7 +96,7 @@ impl<'p> Program<'p> {
     }
 }
 
-impl<'p> Node for Program<'p> {
+impl<'p> NodeType for Program<'p> {
     /// Returns the literal of the first statement, or `""` for an empty program.
     fn token_literal(&self) -> &str {
         if !self.statements.is_empty() {
@@ -117,7 +124,7 @@ pub(crate) struct Boolean<'b> {
     pub(crate) value: bool,
 }
 
-impl<'b> Node for Boolean<'b> {
+impl<'b> NodeType for Boolean<'b> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -137,7 +144,7 @@ pub(crate) struct BlockStatement<'bs> {
     pub(crate) statements: Vec<Statement<'bs>>,
 }
 
-impl<'bs> Node for BlockStatement<'bs> {
+impl<'bs> NodeType for BlockStatement<'bs> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -161,7 +168,7 @@ pub(crate) struct CallExpression<'ce> {
     pub(crate) arguments: Vec<Expression<'ce>>,
 }
 
-impl<'ce> Node for CallExpression<'ce> {
+impl<'ce> NodeType for CallExpression<'ce> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -195,7 +202,7 @@ pub(crate) struct FunctionLiteral<'fl> {
     pub(crate) body: BlockStatement<'fl>,
 }
 
-impl<'fl> Node for FunctionLiteral<'fl> {
+impl<'fl> NodeType for FunctionLiteral<'fl> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -227,7 +234,7 @@ pub(crate) struct Identifier<'i> {
     pub(crate) value: &'i str,
 }
 
-impl<'i> Node for Identifier<'i> {
+impl<'i> NodeType for Identifier<'i> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -246,7 +253,7 @@ pub(crate) struct IfExpression<'ie> {
     pub(crate) alternative: Option<BlockStatement<'ie>>,
 }
 
-impl<'ie> Node for IfExpression<'ie> {
+impl<'ie> NodeType for IfExpression<'ie> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -277,7 +284,7 @@ pub(crate) struct Infix<'i> {
     pub(crate) right: Box<Expression<'i>>,
 }
 
-impl<'i> Node for Infix<'i> {
+impl<'i> NodeType for Infix<'i> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -304,7 +311,7 @@ pub(crate) struct IntegerLiteral<'i> {
     pub(crate) value: i64,
 }
 
-impl<'i> Node for IntegerLiteral<'i> {
+impl<'i> NodeType for IntegerLiteral<'i> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -322,7 +329,7 @@ pub(crate) struct LetStatement<'l> {
     pub(crate) value: Box<Expression<'l>>,
 }
 
-impl<'l> Node for LetStatement<'l> {
+impl<'l> NodeType for LetStatement<'l> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -347,7 +354,7 @@ pub(crate) struct Prefix<'p> {
     pub(crate) right: Box<Expression<'p>>,
 }
 
-impl<'p> Node for Prefix<'p> {
+impl<'p> NodeType for Prefix<'p> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
@@ -371,7 +378,7 @@ pub(crate) struct ReturnStatement<'r> {
     pub(crate) value: Box<Expression<'r>>,
 }
 
-impl<'r> Node for ReturnStatement<'r> {
+impl<'r> NodeType for ReturnStatement<'r> {
     fn token_literal(&self) -> &str {
         self.token.literal
     }
