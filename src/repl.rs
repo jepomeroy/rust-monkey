@@ -3,11 +3,7 @@
 use std::io::{self, BufRead, Write};
 
 use crate::{
-    ast::{Node::ProgramNode, NodeType},
-    evaluator::eval,
-    lexer::Lexer,
-    object::{Object, ObjectType::Null},
-    parser::Parser,
+    ast::Node::ProgramNode, evaluator::eval, lexer::Lexer, object::Object, parser::Parser,
 };
 
 const PROMPT: &str = ">> ";
