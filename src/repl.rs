@@ -3,7 +3,11 @@
 use std::io::{self, BufRead, Write};
 
 use crate::{
-    ast::Node::ProgramNode, evaluator::eval, lexer::Lexer, object::Object, parser::Parser,
+    ast::Node::ProgramNode,
+    evaluator::eval,
+    lexer::Lexer,
+    object::{Environment, Object},
+    parser::Parser,
 };
 
 const PROMPT: &str = ">> ";
@@ -25,6 +29,8 @@ const MONKEY_FACE: &str = r#"
 ///
 /// Exits when an empty line is entered.
 pub(crate) fn start<R: BufRead, W: Write>(mut input: R, mut out: W) -> io::Result<()> {
+    let env = Environment::new();
+
     loop {
         let mut buff = String::new();
         write!(out, "{}", PROMPT)?;
@@ -52,7 +58,7 @@ pub(crate) fn start<R: BufRead, W: Write>(mut input: R, mut out: W) -> io::Resul
             }
         }
 
-        let evaluated = eval(&ProgramNode(program));
+        let evaluated = eval(&ProgramNode(program), &env);
 
         // if evaluated != Null {
         let _ = writeln!(out, "{}", evaluated.inspect());

@@ -1,7 +1,7 @@
 use crate::{
     ast::{BlockStatement, Expression, IfExpression, Node, Program, Statement},
     object::{
-        Object,
+        Env, Object,
         ObjectType::{self, Boolean, Error, Integer, Null, Return},
     },
 };
@@ -9,12 +9,12 @@ use crate::{
 const TRUE: ObjectType = ObjectType::Boolean(true);
 const FALSE: ObjectType = ObjectType::Boolean(false);
 
-pub(crate) fn eval(node: &Node) -> ObjectType {
+pub(crate) fn eval(node: &Node, env: &Env) -> ObjectType {
     match node {
-        Node::StatementNode(statement) => eval_statement(statement),
-        Node::ExpressionNode(expression) => eval_expression(expression),
-        Node::BlockStatementNode(block_statement) => eval_block_statement(block_statement),
-        Node::ProgramNode(program) => eval_program(program),
+        Node::StatementNode(statement) => eval_statement(statement, env),
+        Node::ExpressionNode(expression) => eval_expression(expression, env),
+        Node::BlockStatementNode(block_statement) => eval_block_statement(block_statement, env),
+        Node::ProgramNode(program) => eval_program(program, env),
     }
 }
 
@@ -29,11 +29,11 @@ fn eval_bang_operator_expression(right: ObjectType) -> ObjectType {
     }
 }
 
-fn eval_block_statement(block: &BlockStatement) -> ObjectType {
+fn eval_block_statement(block: &BlockStatement, env: &Env) -> ObjectType {
     let mut result = Null;
 
     for s in &block.statements {
-        result = eval_statement(s);
+        result = eval_statement(s, env);
 
         if let Error(_) = result {
             return result;
@@ -47,21 +47,27 @@ fn eval_block_statement(block: &BlockStatement) -> ObjectType {
     result
 }
 
-fn eval_expression(expr: &Expression) -> ObjectType {
+fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
     match expr {
         Expression::Boolean(boolean) => get_boolean_object(boolean.value),
         Expression::Call(call_expression) => todo!(),
         Expression::Function(function_literal) => todo!(),
-        Expression::Ident(identifier) => todo!(),
-        Expression::IfExpr(if_expression) => eval_if_expression(if_expression),
+        Expression::Ident(identifier) => {
+            if let Some(value) = env.borrow().get(identifier.value) {
+                return value;
+            }
+
+            new_error(format!("identifier not found: {}", identifier.value))
+        }
+        Expression::IfExpr(if_expression) => eval_if_expression(if_expression, env),
         Expression::InfixExpr(infix) => {
-            let left = eval_expression(&infix.left);
+            let left = eval_expression(&infix.left, env);
 
             if is_error(&left) {
                 return left;
             }
 
-            let right = eval_expression(&infix.right);
+            let right = eval_expression(&infix.right, env);
 
             if is_error(&right) {
                 return right;
@@ -71,7 +77,7 @@ fn eval_expression(expr: &Expression) -> ObjectType {
         }
         Expression::Integer(integer_literal) => ObjectType::Integer(integer_literal.value),
         Expression::PrefixExpr(prefix) => {
-            let right = eval_expression(&prefix.right);
+            let right = eval_expression(&prefix.right, env);
 
             if is_error(&right) {
                 return right;
@@ -82,17 +88,17 @@ fn eval_expression(expr: &Expression) -> ObjectType {
     }
 }
 
-fn eval_if_expression(expr: &IfExpression) -> ObjectType {
-    let condition = eval_expression(&expr.condition);
+fn eval_if_expression(expr: &IfExpression, env: &Env) -> ObjectType {
+    let condition = eval_expression(&expr.condition, env);
 
     if is_error(&condition) {
         return condition;
     }
 
     if is_truthy(condition) {
-        eval_statements(&expr.consequence.statements)
+        eval_statements(&expr.consequence.statements, env)
     } else if let Some(alternative) = &expr.alternative {
-        eval_statements(&alternative.statements)
+        eval_statements(&alternative.statements, env)
     } else {
         Null
     }
@@ -107,9 +113,9 @@ fn eval_infix_operator(operator: &str, left: ObjectType, right: ObjectType) -> O
 
             new_error(format!(
                 "unknown operator: {} {} {}",
-                &left.objtype(),
+                left.objtype(),
                 operator,
-                &right.objtype()
+                right.objtype()
             ))
         }
         (Boolean(left_val), Boolean(right_val)) => match operator {
@@ -164,11 +170,11 @@ fn eval_prefix_expression(prefix: &str, right: ObjectType) -> ObjectType {
     }
 }
 
-fn eval_program(program: &Program) -> ObjectType {
+fn eval_program(program: &Program, env: &Env) -> ObjectType {
     let mut result = Null;
 
     for s in &program.statements {
-        result = eval_statement(s);
+        result = eval_statement(s, env);
 
         match result {
             Return(object_type) => return *object_type,
@@ -180,11 +186,19 @@ fn eval_program(program: &Program) -> ObjectType {
     result
 }
 
-fn eval_statement(stmt: &Statement) -> ObjectType {
+fn eval_statement(stmt: &Statement, env: &Env) -> ObjectType {
     match stmt {
-        Statement::Let(let_statement) => todo!(),
+        Statement::Let(let_statement) => {
+            let value = eval_expression(&*let_statement.value, env);
+
+            if is_error(&value) {
+                return value;
+            }
+
+            env.borrow_mut().set(let_statement.name.value, value)
+        }
         Statement::Return(return_statement) => {
-            let value = eval_expression(&return_statement.value);
+            let value = eval_expression(&return_statement.value, env);
 
             if is_error(&value) {
                 return value;
@@ -192,15 +206,15 @@ fn eval_statement(stmt: &Statement) -> ObjectType {
 
             Return(Box::new(value))
         }
-        Statement::ExpressionStmt(expression) => eval_expression(expression),
+        Statement::ExpressionStmt(expression) => eval_expression(expression, env),
     }
 }
 
-fn eval_statements(statements: &[Statement]) -> ObjectType {
+fn eval_statements(statements: &[Statement], env: &Env) -> ObjectType {
     let mut result = Null;
 
     for s in statements {
-        result = eval_statement(s);
+        result = eval_statement(s, env);
 
         if let Error(_) = result {
             return result;
@@ -239,7 +253,11 @@ fn new_error(err: String) -> ObjectType {
 
 #[cfg(test)]
 mod tests {
-    use crate::{lexer::Lexer, object::ObjectType, parser::Parser};
+    use crate::{
+        lexer::Lexer,
+        object::{Environment, ObjectType},
+        parser::Parser,
+    };
 
     use super::*;
 
@@ -252,8 +270,9 @@ mod tests {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let program = parser.parse_program();
+        let env = Environment::new();
 
-        eval(&Node::ProgramNode(program))
+        eval(&Node::ProgramNode(program), &env)
     }
 
     fn test_boolean_object(obj: ObjectType, expected: bool) {
@@ -347,6 +366,10 @@ mod tests {
                   return 1;
                 }",
                 expected: "unknown operator: BOOLEAN + BOOLEAN",
+            },
+            InputExpected {
+                input: "foobar",
+                expected: "identifier not found: foobar",
             },
         ];
 
@@ -519,6 +542,32 @@ mod tests {
             let evaluated = test_eval(test.input);
 
             test_integer_object(evaluated, test.expected);
+        }
+    }
+
+    #[test]
+    fn test_let_statements() {
+        let tests = vec![
+            InputExpected {
+                input: "let a = 5; a;",
+                expected: 5,
+            },
+            InputExpected {
+                input: "let a = 5 * 5; a;",
+                expected: 25,
+            },
+            InputExpected {
+                input: "let a = 5; let b = a; b;",
+                expected: 5,
+            },
+            InputExpected {
+                input: "let a = 5; let b = a; let c = a + b + 5; c;",
+                expected: 15,
+            },
+        ];
+
+        for test in tests {
+            test_integer_object(test_eval(test.input), test.expected)
         }
     }
 
