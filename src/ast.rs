@@ -2,31 +2,31 @@
 
 use crate::token::Token;
 
-pub(crate) enum Node<'n> {
-    StatementNode(Statement<'n>),
-    ExpressionNode(Expression<'n>),
-    BlockStatementNode(BlockStatement<'n>),
-    ProgramNode(Program<'n>),
+pub(crate) enum Node {
+    StatementNode(Statement),
+    ExpressionNode(Expression),
+    BlockStatementNode(BlockStatement),
+    ProgramNode(Program),
 }
 
 // Common interface for every node in the AST.
 pub(crate) trait NodeType {
     /// The literal text of the token this node is associated with.
     /// Used mainly for debugging and testing.
-    fn token_literal(&self) -> &str;
+    fn token_literal(&self) -> String;
     fn string(&self) -> String;
 }
 
 /// A statement: a construct that doesn't produce a value (e.g. `let x = 5;`).
-#[derive(Debug)]
-pub(crate) enum Statement<'s> {
-    Let(LetStatement<'s>),
-    Return(ReturnStatement<'s>),
-    ExpressionStmt(Expression<'s>),
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) enum Statement {
+    Let(LetStatement),
+    Return(ReturnStatement),
+    ExpressionStmt(Expression),
 }
 
-impl<'s> NodeType for Statement<'s> {
-    fn token_literal(&self) -> &str {
+impl NodeType for Statement {
+    fn token_literal(&self) -> String {
         match self {
             Statement::Let(s) => s.token_literal(),
             Statement::Return(s) => s.token_literal(),
@@ -44,20 +44,20 @@ impl<'s> NodeType for Statement<'s> {
 }
 
 /// An expression: a construct that produces a value (e.g. `5`, `add(1, 2)`).
-#[derive(Debug)]
-pub(crate) enum Expression<'e> {
-    Boolean(Boolean<'e>),
-    Call(CallExpression<'e>),
-    Function(FunctionLiteral<'e>),
-    Ident(Identifier<'e>),
-    IfExpr(IfExpression<'e>),
-    InfixExpr(Infix<'e>),
-    Integer(IntegerLiteral<'e>),
-    PrefixExpr(Prefix<'e>),
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) enum Expression {
+    Boolean(Boolean),
+    Call(CallExpression),
+    Function(FunctionLiteral),
+    Ident(Identifier),
+    IfExpr(IfExpression),
+    InfixExpr(Infix),
+    Integer(IntegerLiteral),
+    PrefixExpr(Prefix),
 }
 
-impl<'e> NodeType for Expression<'e> {
-    fn token_literal(&self) -> &str {
+impl NodeType for Expression {
+    fn token_literal(&self) -> String {
         match self {
             Expression::Boolean(boolean) => boolean.token_literal(),
             Expression::Call(call_expression) => call_expression.token_literal(),
@@ -86,24 +86,24 @@ impl<'e> NodeType for Expression<'e> {
 
 /// The root of every AST: a program is a sequence of statements.
 #[derive(Debug)]
-pub(crate) struct Program<'p> {
-    pub(crate) statements: Vec<Statement<'p>>,
+pub(crate) struct Program {
+    pub(crate) statements: Vec<Statement>,
 }
 
-impl<'p> Program<'p> {
+impl Program {
     pub(crate) fn new() -> Self {
         Self { statements: vec![] }
     }
 }
 
-impl<'p> NodeType for Program<'p> {
+impl NodeType for Program {
     /// Returns the literal of the first statement, or `""` for an empty program.
-    fn token_literal(&self) -> &str {
+    fn token_literal(&self) -> String {
         if !self.statements.is_empty() {
             return self.statements[0].token_literal();
         }
 
-        ""
+        "".to_string()
     }
 
     fn string(&self) -> String {
@@ -118,15 +118,15 @@ impl<'p> NodeType for Program<'p> {
 }
 
 /// Boolean type
-#[derive(Debug)]
-pub(crate) struct Boolean<'b> {
-    pub(crate) token: Token<'b>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct Boolean {
+    pub(crate) token: Token,
     pub(crate) value: bool,
 }
 
-impl<'b> NodeType for Boolean<'b> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for Boolean {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
@@ -138,15 +138,15 @@ impl<'b> NodeType for Boolean<'b> {
 }
 
 /// BlockStatement type in the form of `{<statement_1>; ... <statement_n>;}`
-#[derive(Debug)]
-pub(crate) struct BlockStatement<'bs> {
-    pub(crate) token: Token<'bs>,
-    pub(crate) statements: Vec<Statement<'bs>>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct BlockStatement {
+    pub(crate) token: Token,
+    pub(crate) statements: Vec<Statement>,
 }
 
-impl<'bs> NodeType for BlockStatement<'bs> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for BlockStatement {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
@@ -161,16 +161,16 @@ impl<'bs> NodeType for BlockStatement<'bs> {
 }
 
 /// Call Expression in the form of `<expression>(<comma separated expressions>);`
-#[derive(Debug)]
-pub(crate) struct CallExpression<'ce> {
-    pub(crate) token: Token<'ce>,
-    pub(crate) function: Box<Expression<'ce>>,
-    pub(crate) arguments: Vec<Expression<'ce>>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct CallExpression {
+    pub(crate) token: Token,
+    pub(crate) function: Box<Expression>,
+    pub(crate) arguments: Vec<Expression>,
 }
 
-impl<'ce> NodeType for CallExpression<'ce> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for CallExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
@@ -195,22 +195,22 @@ impl<'ce> NodeType for CallExpression<'ce> {
 /// Function Literal in the form of `fn(<param>) { <blockstatements> }`
 /// Function are a first class type so you can do something like
 /// 'let myFunc = fn(...) { ... }` or `fn() { return fn(...) { ... } }`
-#[derive(Debug)]
-pub(crate) struct FunctionLiteral<'fl> {
-    pub(crate) token: Token<'fl>,
-    pub(crate) parameters: Vec<Expression<'fl>>, // Expression::Ident
-    pub(crate) body: BlockStatement<'fl>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct FunctionLiteral {
+    pub(crate) token: Token,
+    pub(crate) parameters: Vec<Expression>, // Expression::Ident
+    pub(crate) body: BlockStatement,
 }
 
-impl<'fl> NodeType for FunctionLiteral<'fl> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for FunctionLiteral {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
         let mut out = String::new();
 
-        out.push_str(self.token_literal());
+        out.push_str(self.token_literal().as_str());
         out.push('(');
         out.push_str(
             &self
@@ -228,15 +228,15 @@ impl<'fl> NodeType for FunctionLiteral<'fl> {
 }
 
 /// Expression types
-#[derive(Debug)]
-pub(crate) struct Identifier<'i> {
-    pub(crate) token: Token<'i>,
-    pub(crate) value: &'i str,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct Identifier {
+    pub(crate) token: Token,
+    pub(crate) value: String,
 }
 
-impl<'i> NodeType for Identifier<'i> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for Identifier {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
@@ -245,17 +245,17 @@ impl<'i> NodeType for Identifier<'i> {
 }
 
 /// A binding for the if/else in the form of `if (<condition>) <consequence> else <alternative>`
-#[derive(Debug)]
-pub(crate) struct IfExpression<'ie> {
-    pub(crate) token: Token<'ie>,
-    pub(crate) condition: Box<Expression<'ie>>,
-    pub(crate) consequence: BlockStatement<'ie>,
-    pub(crate) alternative: Option<BlockStatement<'ie>>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct IfExpression {
+    pub(crate) token: Token,
+    pub(crate) condition: Box<Expression>,
+    pub(crate) consequence: BlockStatement,
+    pub(crate) alternative: Option<BlockStatement>,
 }
 
-impl<'ie> NodeType for IfExpression<'ie> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for IfExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
@@ -276,17 +276,17 @@ impl<'ie> NodeType for IfExpression<'ie> {
 }
 
 /// A binding of the form `!5 or -15`
-#[derive(Debug)]
-pub(crate) struct Infix<'i> {
-    pub(crate) token: Token<'i>,
-    pub(crate) left: Box<Expression<'i>>,
-    pub(crate) operator: &'i str,
-    pub(crate) right: Box<Expression<'i>>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct Infix {
+    pub(crate) token: Token,
+    pub(crate) left: Box<Expression>,
+    pub(crate) operator: String,
+    pub(crate) right: Box<Expression>,
 }
 
-impl<'i> NodeType for Infix<'i> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for Infix {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
@@ -295,7 +295,7 @@ impl<'i> NodeType for Infix<'i> {
         out.push('(');
         out.push_str(self.left.string().as_str());
         out.push(' ');
-        out.push_str(self.operator);
+        out.push_str(self.operator.as_str());
         out.push(' ');
         out.push_str(self.right.string().as_str());
         out.push(')');
@@ -305,15 +305,15 @@ impl<'i> NodeType for Infix<'i> {
 }
 
 /// A binding for Integer literal values in the form of 5 or -15
-#[derive(Debug)]
-pub(crate) struct IntegerLiteral<'i> {
-    pub(crate) token: Token<'i>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct IntegerLiteral {
+    pub(crate) token: Token,
     pub(crate) value: i64,
 }
 
-impl<'i> NodeType for IntegerLiteral<'i> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for IntegerLiteral {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
@@ -322,16 +322,16 @@ impl<'i> NodeType for IntegerLiteral<'i> {
 }
 
 /// A binding of the form `let <name> = <value>;`.
-#[derive(Debug)]
-pub(crate) struct LetStatement<'l> {
-    pub(crate) token: Token<'l>,
-    pub(crate) name: Identifier<'l>,
-    pub(crate) value: Box<Expression<'l>>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct LetStatement {
+    pub(crate) token: Token,
+    pub(crate) name: Identifier,
+    pub(crate) value: Box<Expression>,
 }
 
-impl<'l> NodeType for LetStatement<'l> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for LetStatement {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
@@ -347,23 +347,23 @@ impl<'l> NodeType for LetStatement<'l> {
 }
 
 /// A binding of the form `!5 or -15`
-#[derive(Debug)]
-pub(crate) struct Prefix<'p> {
-    pub(crate) token: Token<'p>,
-    pub(crate) operator: &'p str,
-    pub(crate) right: Box<Expression<'p>>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct Prefix {
+    pub(crate) token: Token,
+    pub(crate) operator: String,
+    pub(crate) right: Box<Expression>,
 }
 
-impl<'p> NodeType for Prefix<'p> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for Prefix {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
         let mut out = String::new();
 
         out.push('(');
-        out.push_str(self.operator);
+        out.push_str(self.operator.as_str());
         out.push_str(self.right.string().as_str());
         out.push(')');
 
@@ -372,15 +372,15 @@ impl<'p> NodeType for Prefix<'p> {
 }
 
 /// A binding of the form `return <value>;`.
-#[derive(Debug)]
-pub(crate) struct ReturnStatement<'r> {
-    pub(crate) token: Token<'r>,
-    pub(crate) value: Box<Expression<'r>>,
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct ReturnStatement {
+    pub(crate) token: Token,
+    pub(crate) value: Box<Expression>,
 }
 
-impl<'r> NodeType for ReturnStatement<'r> {
-    fn token_literal(&self) -> &str {
-        self.token.literal
+impl NodeType for ReturnStatement {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
     }
 
     fn string(&self) -> String {
@@ -406,19 +406,19 @@ mod tests {
             statements: vec![Statement::Let(LetStatement {
                 token: Token {
                     token: TokenType::LET,
-                    literal: "let",
+                    literal: "let".to_string(),
                 },
                 name: Identifier {
                     token: Token {
                         token: TokenType::IDENT,
-                        literal: "myVar",
+                        literal: "myVar".to_string(),
                     },
-                    value: "myVar",
+                    value: "myVar".to_string(),
                 },
                 value: Box::new(Expression::Integer(IntegerLiteral {
                     token: Token {
                         token: TokenType::INT,
-                        literal: "5",
+                        literal: "5".to_string(),
                     },
                     value: 5,
                 })),

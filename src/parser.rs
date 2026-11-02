@@ -42,8 +42,8 @@ fn map_precedence(token: TokenType) -> Precedence {
     }
 }
 
-type PrefixParseFn<'p> = fn(&mut Parser<'p>) -> Option<Expression<'p>>;
-type InfixParseFn<'p> = fn(&mut Parser<'p>, Option<Expression<'p>>) -> Option<Expression<'p>>;
+type PrefixParseFn<'p> = fn(&mut Parser<'p>) -> Option<Expression>;
+type InfixParseFn<'p> = fn(&mut Parser<'p>, Option<Expression>) -> Option<Expression>;
 
 /// Recursive-descent parser that builds a [`Program`] from a [`Lexer`]'s tokens.
 ///
@@ -52,8 +52,8 @@ type InfixParseFn<'p> = fn(&mut Parser<'p>, Option<Expression<'p>>) -> Option<Ex
 #[derive(Debug)]
 pub(crate) struct Parser<'p> {
     lexer: Lexer<'p>,
-    curr_token: Token<'p>,
-    peek_token: Token<'p>,
+    curr_token: Token,
+    peek_token: Token,
     errors: Vec<String>,
     prefix_parse_fns: HashMap<TokenType, PrefixParseFn<'p>>,
     infix_parse_fns: HashMap<TokenType, InfixParseFn<'p>>,
@@ -144,7 +144,7 @@ impl<'p> Parser<'p> {
     }
 
     /// Parses statements until EOF. Statements that fail to parse are skipped.
-    pub(crate) fn parse_program(&mut self) -> Program<'p> {
+    pub(crate) fn parse_program(&mut self) -> Program {
         let mut program = Program::new();
 
         while self.curr_token.token != TokenType::EOF {
@@ -159,7 +159,7 @@ impl<'p> Parser<'p> {
     }
 
     /// Dispatches on the current token.
-    fn parse_statement(&mut self) -> Option<Statement<'p>> {
+    fn parse_statement(&mut self) -> Option<Statement> {
         match self.curr_token.token {
             TokenType::LET => self.parse_let_statement(),
             TokenType::RETURN => self.parse_return_statement(),
@@ -167,7 +167,7 @@ impl<'p> Parser<'p> {
         }
     }
 
-    fn parse_block_statement(&mut self) -> BlockStatement<'p> {
+    fn parse_block_statement(&mut self) -> BlockStatement {
         let curr = self.curr_token.clone();
         let mut statements = Vec::<Statement>::new();
 
@@ -187,17 +187,14 @@ impl<'p> Parser<'p> {
         }
     }
 
-    fn parse_boolean(&mut self) -> Option<Expression<'p>> {
+    fn parse_boolean(&mut self) -> Option<Expression> {
         Some(Expression::Boolean(Boolean {
             token: self.curr_token.clone(),
             value: self.curr_token_is(TokenType::TRUE),
         }))
     }
 
-    fn parse_call_expression(
-        &mut self,
-        function: Option<Expression<'p>>,
-    ) -> Option<Expression<'p>> {
+    fn parse_call_expression(&mut self, function: Option<Expression>) -> Option<Expression> {
         let curr = self.curr_token.clone();
         let arguments = self.parse_call_arguments().unwrap_or(vec![]);
 
@@ -212,7 +209,7 @@ impl<'p> Parser<'p> {
         None
     }
 
-    fn parse_call_arguments(&mut self) -> Option<Vec<Expression<'p>>> {
+    fn parse_call_arguments(&mut self) -> Option<Vec<Expression>> {
         let mut args = vec![];
 
         if self.peek_token_is(TokenType::RPAREN) {
@@ -240,7 +237,7 @@ impl<'p> Parser<'p> {
         Some(args)
     }
 
-    fn parse_expression_statement(&mut self) -> Option<Statement<'p>> {
+    fn parse_expression_statement(&mut self) -> Option<Statement> {
         let expr = self.parse_expression(Precedence::Lowest);
 
         if self.peek_token_is(TokenType::SEMICOLON) {
@@ -250,7 +247,7 @@ impl<'p> Parser<'p> {
         Some(ExpressionStmt(expr?))
     }
 
-    fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression<'p>> {
+    fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
         if let Some(prefix) = self.prefix_parse_fns.get(&self.curr_token.token).copied() {
             let mut left = prefix(self);
 
@@ -271,7 +268,7 @@ impl<'p> Parser<'p> {
         None
     }
 
-    fn parse_function_literal(&mut self) -> Option<Expression<'p>> {
+    fn parse_function_literal(&mut self) -> Option<Expression> {
         let curr = self.curr_token.clone();
 
         if !self.expect_peek(TokenType::LPAREN) {
@@ -293,7 +290,7 @@ impl<'p> Parser<'p> {
         }))
     }
 
-    fn parse_function_parameters(&mut self) -> Vec<Expression<'p>> {
+    fn parse_function_parameters(&mut self) -> Vec<Expression> {
         let mut parameters = Vec::new();
 
         if self.peek_token_is(TokenType::RPAREN) {
@@ -305,7 +302,7 @@ impl<'p> Parser<'p> {
 
         let ident = Identifier {
             token: self.curr_token.clone(),
-            value: self.curr_token.literal,
+            value: self.curr_token.literal.clone(),
         };
 
         parameters.push(Expression::Ident(ident));
@@ -316,7 +313,7 @@ impl<'p> Parser<'p> {
 
             let ident = Identifier {
                 token: self.curr_token.clone(),
-                value: self.curr_token.literal,
+                value: self.curr_token.literal.clone(),
             };
 
             parameters.push(Expression::Ident(ident));
@@ -329,7 +326,7 @@ impl<'p> Parser<'p> {
         parameters
     }
 
-    fn parse_grouped_expression(&mut self) -> Option<Expression<'p>> {
+    fn parse_grouped_expression(&mut self) -> Option<Expression> {
         self.next_token();
         let expr = self.parse_expression(Precedence::Lowest);
 
@@ -340,14 +337,14 @@ impl<'p> Parser<'p> {
         expr
     }
 
-    fn parse_identifier(&mut self) -> Option<Expression<'p>> {
+    fn parse_identifier(&mut self) -> Option<Expression> {
         Some(Expression::Ident(Identifier {
             token: self.curr_token.clone(),
-            value: self.curr_token.literal,
+            value: self.curr_token.literal.clone(),
         }))
     }
 
-    fn parse_if_expression(&mut self) -> Option<Expression<'p>> {
+    fn parse_if_expression(&mut self) -> Option<Expression> {
         let curr = self.curr_token.clone();
 
         if !self.expect_peek(TokenType::LPAREN) {
@@ -390,7 +387,7 @@ impl<'p> Parser<'p> {
         None
     }
 
-    fn parse_infix(&mut self, left: Option<Expression<'p>>) -> Option<Expression<'p>> {
+    fn parse_infix(&mut self, left: Option<Expression>) -> Option<Expression> {
         if let Some(left_expr) = left {
             let token = self.curr_token.clone();
             let precedence = self.curr_precedence();
@@ -408,7 +405,7 @@ impl<'p> Parser<'p> {
         None
     }
 
-    fn parse_integer(&mut self) -> Option<Expression<'p>> {
+    fn parse_integer(&mut self) -> Option<Expression> {
         match self.curr_token.literal.parse::<i64>() {
             Ok(int) => Some(Expression::Integer(IntegerLiteral {
                 token: self.curr_token.clone(),
@@ -426,7 +423,7 @@ impl<'p> Parser<'p> {
     }
 
     /// Parses `let <ident> = <expr>;`, starting with `curr_token` on `let`.
-    fn parse_let_statement(&mut self) -> Option<Statement<'p>> {
+    fn parse_let_statement(&mut self) -> Option<Statement> {
         let curr_token = self.curr_token.clone();
 
         if !self.expect_peek(TokenType::IDENT) {
@@ -435,7 +432,7 @@ impl<'p> Parser<'p> {
 
         let identifier = Identifier {
             token: self.curr_token.clone(),
-            value: self.curr_token.literal,
+            value: self.curr_token.literal.clone(),
         };
 
         if !self.expect_peek(ASSIGN) {
@@ -462,7 +459,7 @@ impl<'p> Parser<'p> {
     }
 
     /// Parses `!5` and `-15` expression starting with `curr_token` on the prefix
-    fn parse_prefix(&mut self) -> Option<Expression<'p>> {
+    fn parse_prefix(&mut self) -> Option<Expression> {
         let token = self.curr_token.clone();
 
         self.next_token();
@@ -479,7 +476,7 @@ impl<'p> Parser<'p> {
     }
 
     /// Parses `return <expr>;`, starting with `curr_token` on `return`.
-    fn parse_return_statement(&mut self) -> Option<Statement<'p>> {
+    fn parse_return_statement(&mut self) -> Option<Statement> {
         let curr = self.curr_token.clone();
 
         self.next_token();
@@ -579,9 +576,7 @@ mod tests {
 
     fn make_program(input: &str) -> Parser<'_> {
         let lexer = Lexer::new(input);
-        let p = Parser::new(lexer);
-
-        p
+        Parser::new(lexer)
     }
 
     fn test_boolean_literal(expr: &Expression, value: bool) {

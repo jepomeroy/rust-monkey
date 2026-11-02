@@ -1,17 +1,52 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-#[derive(Debug, PartialEq, Clone)]
-pub(crate) enum ObjectType {
-    Boolean(bool),
-    Error(String),
-    Integer(i64),
-    Null,
-    Return(Box<ObjectType>),
-}
+use crate::ast::{BlockStatement, Expression, NodeType};
 
 pub(crate) trait Object {
     fn objtype(&self) -> String;
     fn inspect(&self) -> String;
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct FunctionObject {
+    pub(crate) parameters: Vec<Expression>,
+    pub(crate) body: BlockStatement,
+    pub(crate) env: Env,
+}
+
+impl Object for FunctionObject {
+    fn objtype(&self) -> String {
+        "FUNCTION".to_string()
+    }
+
+    fn inspect(&self) -> String {
+        let mut out = String::new();
+
+        out.push_str("fn(");
+        out.push_str(
+            &self
+                .parameters
+                .iter()
+                .map(|p| p.string())
+                .collect::<Vec<String>>()
+                .join(", "),
+        );
+        out.push_str(") {\n");
+        out.push_str(self.body.string().as_str());
+        out.push_str("\n}");
+
+        out
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) enum ObjectType {
+    Boolean(bool),
+    Error(String),
+    Function(FunctionObject),
+    Integer(i64),
+    Null,
+    Return(Box<ObjectType>),
 }
 
 impl Object for ObjectType {
@@ -19,6 +54,7 @@ impl Object for ObjectType {
         match self {
             ObjectType::Boolean(_) => "BOOLEAN".to_string(),
             ObjectType::Error(_) => "ERROR".to_string(),
+            ObjectType::Function(f) => f.objtype(),
             ObjectType::Integer(_) => "INTEGER".to_string(),
             ObjectType::Null => "NULL".to_string(),
             ObjectType::Return(_) => "RETURN".to_string(),
@@ -29,6 +65,7 @@ impl Object for ObjectType {
         match self {
             ObjectType::Boolean(b) => format!("{}", b),
             ObjectType::Error(e) => e.clone(),
+            ObjectType::Function(f) => f.inspect(),
             ObjectType::Integer(i) => format!("{}", i),
             ObjectType::Null => "null".to_string(),
             ObjectType::Return(r) => r.inspect(),
@@ -38,6 +75,7 @@ impl Object for ObjectType {
 
 pub(crate) type Env = Rc<RefCell<Environment>>;
 
+#[derive(Debug, PartialEq)]
 pub(crate) struct Environment {
     store: HashMap<String, ObjectType>,
     outer: Option<Env>,

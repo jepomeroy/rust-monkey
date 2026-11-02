@@ -1,8 +1,8 @@
 use crate::{
     ast::{BlockStatement, Expression, IfExpression, Node, Program, Statement},
     object::{
-        Env, Object,
-        ObjectType::{self, Boolean, Error, Integer, Null, Return},
+        Env, Environment, FunctionObject, Object,
+        ObjectType::{self, Boolean, Error, Function, Integer, Null, Return},
     },
 };
 
@@ -15,6 +15,36 @@ pub(crate) fn eval(node: &Node, env: &Env) -> ObjectType {
         Node::ExpressionNode(expression) => eval_expression(expression, env),
         Node::BlockStatementNode(block_statement) => eval_block_statement(block_statement, env),
         Node::ProgramNode(program) => eval_program(program, env),
+    }
+}
+
+fn apply_function(function: FunctionObject, args: &[ObjectType]) -> ObjectType {
+    let env = extend_function_env(&function, args);
+    let evaluated = eval_block_statement(&function.body, &env);
+
+    unwrap_return_value(evaluated)
+}
+
+fn extend_function_env(func: &FunctionObject, args: &[ObjectType]) -> Env {
+    let env = Environment::new_enclosed(func.env.clone());
+
+    for (i, param) in func.parameters.iter().enumerate() {
+        match param {
+            Expression::Ident(identifier) => {
+                env.borrow_mut()
+                    .set(&identifier.value, args.get(i).unwrap().clone());
+            }
+            _ => (),
+        }
+    }
+
+    env
+}
+
+fn unwrap_return_value(obj: ObjectType) -> ObjectType {
+    match obj {
+        Return(object_type) => *object_type,
+        _ => obj,
     }
 }
 
@@ -50,10 +80,41 @@ fn eval_block_statement(block: &BlockStatement, env: &Env) -> ObjectType {
 fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
     match expr {
         Expression::Boolean(boolean) => get_boolean_object(boolean.value),
-        Expression::Call(call_expression) => todo!(),
-        Expression::Function(function_literal) => todo!(),
+        Expression::Call(call_expression) => {
+            let function = eval_expression(&call_expression.function, &env);
+
+            if is_error(&function) {
+                return function;
+            }
+
+            let args = eval_expressions(&call_expression.arguments, &env);
+
+            if args.len() == 1 {
+                if let Some(arg) = args.get(0)
+                    && is_error(arg)
+                {
+                    return arg.clone();
+                }
+            }
+
+            match function {
+                Function(function_obj) => {
+                    return apply_function(function_obj, &args);
+                }
+                other => return new_error(format!("not a function: got={}", other.objtype())),
+            }
+        }
+        Expression::Function(function_literal) => {
+            let parameters = function_literal.parameters.clone();
+            let body = function_literal.body.clone();
+            return Function(FunctionObject {
+                parameters,
+                body,
+                env: env.clone(),
+            });
+        }
         Expression::Ident(identifier) => {
-            if let Some(value) = env.borrow().get(identifier.value) {
+            if let Some(value) = env.borrow().get(&identifier.value) {
                 return value;
             }
 
@@ -73,7 +134,7 @@ fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
                 return right;
             }
 
-            eval_infix_operator(infix.operator, left, right)
+            eval_infix_operator(&infix.operator, left, right)
         }
         Expression::Integer(integer_literal) => ObjectType::Integer(integer_literal.value),
         Expression::PrefixExpr(prefix) => {
@@ -83,9 +144,25 @@ fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
                 return right;
             }
 
-            eval_prefix_expression(prefix.operator, right)
+            eval_prefix_expression(&prefix.operator, right)
         }
     }
+}
+
+fn eval_expressions(exps: &[Expression], env: &Env) -> Vec<ObjectType> {
+    let mut result = vec![];
+
+    for exp in exps {
+        let evaluated = eval_expression(exp, env);
+
+        if is_error(&evaluated) {
+            return vec![evaluated];
+        }
+
+        result.push(evaluated);
+    }
+
+    result
 }
 
 fn eval_if_expression(expr: &IfExpression, env: &Env) -> ObjectType {
@@ -195,7 +272,7 @@ fn eval_statement(stmt: &Statement, env: &Env) -> ObjectType {
                 return value;
             }
 
-            env.borrow_mut().set(let_statement.name.value, value)
+            env.borrow_mut().set(&let_statement.name.value, value)
         }
         Statement::Return(return_statement) => {
             let value = eval_expression(&return_statement.value, env);
@@ -254,6 +331,7 @@ fn new_error(err: String) -> ObjectType {
 #[cfg(test)]
 mod tests {
     use crate::{
+        ast::NodeType,
         lexer::Lexer,
         object::{Environment, ObjectType},
         parser::Parser,
@@ -327,6 +405,19 @@ mod tests {
 
             test_boolean_object(evaluated, test.expected);
         }
+    }
+
+    #[test]
+    fn test_closures() {
+        let input = r"
+            let newAdder = fn(x) {
+                fn(y) { x + y };
+            };
+
+            let addTwo = newAdder(2);
+            addTwo(2);";
+
+        test_integer_object(test_eval(input), 4);
     }
 
     #[test]
@@ -470,6 +561,56 @@ mod tests {
             let evaluated = test_eval(test.input);
 
             test_boolean_object(evaluated, test.expected);
+        }
+    }
+
+    #[test]
+    fn test_function_application() {
+        let tests = vec![
+            InputExpected {
+                input: "let identity = fn(x) { x; }; identity(5);",
+                expected: 5,
+            },
+            InputExpected {
+                input: "let identity = fn(x) { return x; }; identity(5);",
+                expected: 5,
+            },
+            InputExpected {
+                input: "let double = fn(x) { x * 2; }; double(5);",
+                expected: 10,
+            },
+            InputExpected {
+                input: "let add = fn(x, y) { x + y; }; add(5, 5);",
+                expected: 10,
+            },
+            InputExpected {
+                input: "let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));",
+                expected: 20,
+            },
+            InputExpected {
+                input: "fn(x) { x; }(5)",
+                expected: 5,
+            },
+        ];
+
+        for test in tests {
+            test_integer_object(test_eval(test.input), test.expected)
+        }
+    }
+
+    #[test]
+    fn test_function_object() {
+        let input = "fn(x) { x + 2; };";
+
+        let evaluated = test_eval(input);
+
+        match evaluated {
+            ObjectType::Function(func) => {
+                assert_eq!(func.parameters.len(), 1);
+                assert_eq!(func.parameters.get(0).unwrap().string(), "x");
+                assert_eq!(func.body.string(), "(x + 2)");
+            }
+            other => panic!("object is not a Function. got={other:?}"),
         }
     }
 

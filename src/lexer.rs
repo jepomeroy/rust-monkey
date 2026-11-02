@@ -27,17 +27,17 @@ impl<'src> Lexer<'src> {
     }
 
     fn is_letter(ch: u8) -> bool {
-        return b'a' <= ch && ch <= b'z' || b'A' <= ch && ch <= b'Z';
+        (b'a'..=b'z').contains(&ch) || (b'A'..=b'Z').contains(&ch)
     }
 
     fn is_digit(ch: u8) -> bool {
-        return b'0' <= ch && ch <= b'9';
+        (b'0'..=b'9').contains(&ch)
     }
 
     /// Returns the next token, advancing past it.
     ///
     /// Once the input is exhausted this keeps returning [`TokenType::EOF`].
-    pub(crate) fn next_token(&mut self) -> Token<'src> {
+    pub(crate) fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
         let token = match self.ch {
@@ -81,7 +81,10 @@ impl<'src> Lexer<'src> {
                     return self.read_number();
                 }
 
-                Token::new(TokenType::ILLEGAL, &self.input[self.position..self.read_position])
+                Token::new(
+                    TokenType::ILLEGAL,
+                    &self.input[self.position..self.read_position],
+                )
             }
         };
 
@@ -93,9 +96,9 @@ impl<'src> Lexer<'src> {
     /// Returns the next byte without consuming it, or `0` at end of input.
     fn peek_char(&self) -> u8 {
         if self.read_position >= self.input.len() {
-            return 0;
+            0
         } else {
-            return self.input.as_bytes()[self.read_position];
+            self.input.as_bytes()[self.read_position]
         }
     }
 
@@ -113,7 +116,7 @@ impl<'src> Lexer<'src> {
 
     /// Reads a run of letters, returning a keyword token if it matches one
     /// and an [`TokenType::IDENT`] otherwise.
-    fn read_identifier(&mut self) -> Token<'src> {
+    fn read_identifier(&mut self) -> Token {
         let position = self.position;
 
         while Lexer::is_letter(self.ch) {
@@ -135,7 +138,7 @@ impl<'src> Lexer<'src> {
     }
 
     /// Reads a run of decimal digits as an [`TokenType::INT`].
-    fn read_number(&mut self) -> Token<'src> {
+    fn read_number(&mut self) -> Token {
         let position = self.position;
 
         while Lexer::is_digit(self.ch) {
