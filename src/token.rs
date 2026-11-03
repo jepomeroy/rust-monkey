@@ -12,6 +12,7 @@ pub(crate) enum TokenType {
     // Idents and Literals
     IDENT,
     INT,
+    STRING,
     // Operators
     ASSIGN,
     PLUS,

@@ -4,9 +4,12 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{
-        BlockStatement, Boolean, CallExpression, Expression, FunctionLiteral, Identifier,
-        IfExpression, Infix, IntegerLiteral, LetStatement, Prefix, Program, ReturnStatement,
+        BlockStatement, Boolean, CallExpression,
+        Expression::{self, StringExpr},
+        FunctionLiteral, Identifier, IfExpression, Infix, IntegerLiteral, LetStatement, Prefix,
+        Program, ReturnStatement,
         Statement::{self, ExpressionStmt},
+        StringExpression,
     },
     lexer::Lexer,
     token::{
@@ -86,6 +89,7 @@ impl<'p> Parser<'p> {
         parser.register_prefix(TokenType::INT, Self::parse_integer);
         parser.register_prefix(TokenType::BANG, Self::parse_prefix);
         parser.register_prefix(TokenType::MINUS, Self::parse_prefix);
+        parser.register_prefix(TokenType::STRING, Self::parse_string_literal);
 
         // populate infix parse fns
         parser.register_infix(TokenType::PLUS, Self::parse_infix);
@@ -495,6 +499,13 @@ impl<'p> Parser<'p> {
         }
 
         None
+    }
+
+    fn parse_string_literal(&mut self) -> Option<Expression> {
+        Some(StringExpr(StringExpression {
+            token: self.curr_token.clone(),
+            value: self.curr_token.literal.clone(),
+        }))
     }
 
     fn peek_precedence(&self) -> Precedence {
@@ -1264,6 +1275,27 @@ mod tests {
                 }
                 _ => panic!("Expected return statement"),
             };
+        }
+    }
+
+    #[test]
+    fn test_string_literal_expression() {
+        let input = r#""hello world""#;
+
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
+        check_for_parse_errors(&parser);
+
+        if let Some(stmt) = program.statements.first() {
+            match stmt {
+                ExpressionStmt(expression) => match expression {
+                    Expression::StringExpr(string_expression) => {
+                        assert_eq!(string_expression.string(), "hello world")
+                    }
+                    other => panic!("exp is not a StringLiteral. got={other:?}"),
+                },
+                other => panic!("Expected an expression statement. got={other:?}"),
+            }
         }
     }
 }

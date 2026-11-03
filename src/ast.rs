@@ -54,6 +54,7 @@ pub(crate) enum Expression {
     InfixExpr(Infix),
     Integer(IntegerLiteral),
     PrefixExpr(Prefix),
+    StringExpr(StringExpression),
 }
 
 impl NodeType for Expression {
@@ -67,6 +68,7 @@ impl NodeType for Expression {
             Expression::InfixExpr(infix) => infix.token_literal(),
             Expression::Integer(int) => int.token_literal(),
             Expression::PrefixExpr(prefix) => prefix.token_literal(),
+            Expression::StringExpr(strg) => strg.token_literal(),
         }
     }
 
@@ -80,6 +82,7 @@ impl NodeType for Expression {
             Expression::InfixExpr(infix) => infix.string(),
             Expression::Integer(int) => int.string(),
             Expression::PrefixExpr(prefix) => prefix.string(),
+            Expression::StringExpr(strg) => strg.string(),
         }
     }
 }
@@ -390,6 +393,23 @@ impl NodeType for ReturnStatement {
         out.push(';');
 
         out
+    }
+}
+
+/// A binding of the form `"<string_value>"`.
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct StringExpression {
+    pub(crate) token: Token,
+    pub(crate) value: String,
+}
+
+impl NodeType for StringExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        self.token.literal.clone()
     }
 }
 

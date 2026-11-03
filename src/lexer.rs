@@ -69,6 +69,7 @@ impl<'src> Lexer<'src> {
             b'<' => Token::new(TokenType::LT, "<"),
             b'>' => Token::new(TokenType::GT, ">"),
             b';' => Token::new(TokenType::SEMICOLON, ";"),
+            b'"' => Token::new(TokenType::STRING, self.read_string()),
             0 => Token::new(TokenType::EOF, ""),
             _ => {
                 // Identifiers and numbers consume their own characters, so
@@ -150,6 +151,18 @@ impl<'src> Lexer<'src> {
         Token::new(TokenType::INT, literal)
     }
 
+    /// Reads the run of characters unitl the closing quote is found.
+    fn read_string(&mut self) -> String {
+        self.read_char();
+        let position = self.position;
+
+        while self.ch != b'"' && self.ch != 0 {
+            self.read_char();
+        }
+
+        return self.input[position..self.position].to_string();
+    }
+
     fn skip_whitespace(&mut self) {
         while self.ch == b' ' || self.ch == b'\t' || self.ch == b'\n' || self.ch == b'\r' {
             self.read_char();
@@ -163,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_next_token() {
-        let input = r"let five = 5;
+        let input = r#"let five = 5;
             let ten = 10;
 
             let add = fn(x, y) {
@@ -184,7 +197,9 @@ mod tests {
 
             10 != 9;
             10 == 10;
-            ";
+            "foobar"
+            "foo bar"
+            "#;
 
         let tests = [
             Token::new(TokenType::LET, "let"),
@@ -260,6 +275,8 @@ mod tests {
             Token::new(TokenType::EQ, "=="),
             Token::new(TokenType::INT, "10"),
             Token::new(TokenType::SEMICOLON, ";"),
+            Token::new(TokenType::STRING, "foobar"),
+            Token::new(TokenType::STRING, "foo bar"),
             Token::new(TokenType::EOF, ""),
         ];
 

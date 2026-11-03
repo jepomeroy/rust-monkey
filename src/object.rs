@@ -47,6 +47,7 @@ pub(crate) enum ObjectType {
     Integer(i64),
     Null,
     Return(Box<ObjectType>),
+    StringObj(String),
 }
 
 impl Object for ObjectType {
@@ -58,6 +59,7 @@ impl Object for ObjectType {
             ObjectType::Integer(_) => "INTEGER".to_string(),
             ObjectType::Null => "NULL".to_string(),
             ObjectType::Return(_) => "RETURN".to_string(),
+            ObjectType::StringObj(_) => "STRING".to_string(),
         }
     }
 
@@ -69,6 +71,7 @@ impl Object for ObjectType {
             ObjectType::Integer(i) => format!("{}", i),
             ObjectType::Null => "null".to_string(),
             ObjectType::Return(r) => r.inspect(),
+            ObjectType::StringObj(s) => s.to_string(),
         }
     }
 }

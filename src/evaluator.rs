@@ -1,8 +1,8 @@
 use crate::{
-    ast::{BlockStatement, Expression, IfExpression, Node, Program, Statement},
+    ast::{BlockStatement, Expression, IfExpression, Node, NodeType, Program, Statement},
     object::{
         Env, Environment, FunctionObject, Object,
-        ObjectType::{self, Boolean, Error, Function, Integer, Null, Return},
+        ObjectType::{self, Boolean, Error, Function, Integer, Null, Return, StringObj},
     },
 };
 
@@ -146,6 +146,7 @@ fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
 
             eval_prefix_expression(&prefix.operator, right)
         }
+        Expression::StringExpr(string_literal) => ObjectType::StringObj(string_literal.string()),
     }
 }
 
@@ -186,6 +187,18 @@ fn eval_infix_operator(operator: &str, left: ObjectType, right: ObjectType) -> O
         (Integer(left_val), Integer(right_val)) => {
             if let Some(ot) = eval_integer_infix_operator(operator, *left_val, *right_val) {
                 return ot;
+            }
+
+            new_error(format!(
+                "unknown operator: {} {} {}",
+                left.objtype(),
+                operator,
+                right.objtype()
+            ))
+        }
+        (StringObj(left_val), StringObj(right_val)) => {
+            if let Some(st) = eval_string_infix_operator(operator, &*left_val, &*right_val) {
+                return st;
             }
 
             new_error(format!(
@@ -305,6 +318,13 @@ fn eval_statements(statements: &[Statement], env: &Env) -> ObjectType {
     result
 }
 
+fn eval_string_infix_operator(operator: &str, left: &str, right: &str) -> Option<ObjectType> {
+    match operator {
+        "+" => Some(StringObj(format!("{}{}", left, right))),
+        _ => None,
+    }
+}
+
 fn get_boolean_object(input: bool) -> ObjectType {
     if input { TRUE } else { FALSE }
 }
@@ -333,7 +353,10 @@ mod tests {
     use crate::{
         ast::NodeType,
         lexer::Lexer,
-        object::{Environment, ObjectType},
+        object::{
+            Environment,
+            ObjectType::{self, StringObj},
+        },
         parser::Parser,
     };
 
@@ -446,6 +469,10 @@ mod tests {
             InputExpected {
                 input: "if (10 > 1) { true + false; }",
                 expected: "unknown operator: BOOLEAN + BOOLEAN",
+            },
+            InputExpected {
+                input: r#""Hello" - "World""#,
+                expected: "unknown operator: STRING - STRING",
             },
             InputExpected {
                 input: r"
@@ -792,6 +819,30 @@ mod tests {
                 Integer(_) => test_integer_object(evaluated, test.expected),
                 other => panic!("expected Integer,  got {other:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn test_string_literal() {
+        let input = r#""Hello World!""#;
+
+        let evaluated = test_eval(input);
+
+        match evaluated {
+            StringObj(value) => assert_eq!(value, "Hello World!"),
+            other => panic!("object is not String. got={other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_string_concatenation() {
+        let input = r#""Hello" + " " + "World!""#;
+
+        let evaluated = test_eval(input);
+
+        match evaluated {
+            StringObj(value) => assert_eq!(value, "Hello World!"),
+            other => panic!("object is not String. got={other:?}"),
         }
     }
 }
