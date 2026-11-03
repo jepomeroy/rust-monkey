@@ -46,10 +46,12 @@ impl NodeType for Statement {
 /// An expression: a construct that produces a value (e.g. `5`, `add(1, 2)`).
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum Expression {
+    Array(Array),
     Boolean(Boolean),
     Call(CallExpression),
     Function(FunctionLiteral),
     Ident(Identifier),
+    Index(IndexExpression),
     IfExpr(IfExpression),
     InfixExpr(Infix),
     Integer(IntegerLiteral),
@@ -60,10 +62,12 @@ pub(crate) enum Expression {
 impl NodeType for Expression {
     fn token_literal(&self) -> String {
         match self {
+            Expression::Array(array) => array.token_literal(),
             Expression::Boolean(boolean) => boolean.token_literal(),
             Expression::Call(call_expression) => call_expression.token_literal(),
             Expression::Function(function_literal) => function_literal.token_literal(),
             Expression::Ident(identifier) => identifier.token_literal(),
+            Expression::Index(index_expression) => index_expression.token_literal(),
             Expression::IfExpr(if_expression) => if_expression.token_literal(),
             Expression::InfixExpr(infix) => infix.token_literal(),
             Expression::Integer(int) => int.token_literal(),
@@ -74,10 +78,12 @@ impl NodeType for Expression {
 
     fn string(&self) -> String {
         match self {
+            Expression::Array(array) => array.string(),
             Expression::Boolean(boolean) => boolean.string(),
             Expression::Call(call_expression) => call_expression.string(),
             Expression::Function(function_literal) => function_literal.string(),
             Expression::Ident(identifier) => identifier.string(),
+            Expression::Index(index_expression) => index_expression.string(),
             Expression::IfExpr(if_expression) => if_expression.string(),
             Expression::InfixExpr(infix) => infix.string(),
             Expression::Integer(int) => int.string(),
@@ -115,6 +121,36 @@ impl NodeType for Program {
         for s in &self.statements {
             out.push_str(&s.string());
         }
+
+        out
+    }
+}
+
+/// Array type
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct Array {
+    pub(crate) token: Token,
+    pub(crate) elements: Vec<Expression>,
+}
+
+impl NodeType for Array {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        out.push_str("[");
+        out.push_str(
+            self.elements
+                .iter()
+                .map(|a| a.string())
+                .collect::<Vec<String>>()
+                .join(", ")
+                .as_str(),
+        );
+        out.push_str("]");
 
         out
     }
@@ -244,6 +280,32 @@ impl NodeType for Identifier {
 
     fn string(&self) -> String {
         self.value.to_string()
+    }
+}
+
+// Index Expression
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct IndexExpression {
+    pub(crate) token: Token,
+    pub(crate) left: Box<Expression>,
+    pub(crate) index: Box<Expression>,
+}
+
+impl NodeType for IndexExpression {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        out.push_str("(");
+        out.push_str(&self.left.string().as_str());
+        out.push_str("[");
+        out.push_str(&self.index.string().as_str());
+        out.push_str("])");
+
+        out
     }
 }
 

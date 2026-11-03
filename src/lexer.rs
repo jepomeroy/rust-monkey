@@ -52,6 +52,8 @@ impl<'src> Lexer<'src> {
             b',' => Token::new(TokenType::COMMA, ","),
             b'{' => Token::new(TokenType::LBRACE, "{"),
             b'}' => Token::new(TokenType::RBRACE, "}"),
+            b'[' => Token::new(TokenType::LBRACKET, "["),
+            b']' => Token::new(TokenType::RBRACKET, "]"),
             b'(' => Token::new(TokenType::LPAREN, "("),
             b')' => Token::new(TokenType::RPAREN, ")"),
             b'+' => Token::new(TokenType::PLUS, "+"),
@@ -199,6 +201,7 @@ mod tests {
             10 == 10;
             "foobar"
             "foo bar"
+            [1, 2];
             "#;
 
         let tests = [
@@ -277,6 +280,12 @@ mod tests {
             Token::new(TokenType::SEMICOLON, ";"),
             Token::new(TokenType::STRING, "foobar"),
             Token::new(TokenType::STRING, "foo bar"),
+            Token::new(TokenType::LBRACKET, "["),
+            Token::new(TokenType::INT, "1"),
+            Token::new(TokenType::COMMA, ","),
+            Token::new(TokenType::INT, "2"),
+            Token::new(TokenType::RBRACKET, "]"),
+            Token::new(TokenType::SEMICOLON, ";"),
             Token::new(TokenType::EOF, ""),
         ];
 

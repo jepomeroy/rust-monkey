@@ -4,14 +4,15 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{
-        BlockStatement, Boolean, CallExpression,
+        Array, BlockStatement, Boolean, CallExpression,
         Expression::{self, StringExpr},
-        FunctionLiteral, Identifier, IfExpression, Infix, IntegerLiteral, LetStatement, Prefix,
-        Program, ReturnStatement,
+        FunctionLiteral, Identifier, IfExpression, IndexExpression, Infix, IntegerLiteral,
+        LetStatement, Prefix, Program, ReturnStatement,
         Statement::{self, ExpressionStmt},
         StringExpression,
     },
     lexer::Lexer,
+    parser::Precedence::Lowest,
     token::{
         Token,
         TokenType::{self, ASSIGN},
@@ -27,7 +28,7 @@ pub(crate) enum Precedence {
     Product,     // *
     Prefix,      // -X or !X
     Call,        // myFunc(X)
-                 // Index,       // array[idx]
+    Index,       // array[idx]
 }
 
 fn map_precedence(token: TokenType) -> Precedence {
@@ -41,6 +42,7 @@ fn map_precedence(token: TokenType) -> Precedence {
         TokenType::EQ => Precedence::Equals,
         TokenType::NEQ => Precedence::Equals,
         TokenType::LPAREN => Precedence::Call,
+        TokenType::LBRACKET => Precedence::Index,
         _ => Precedence::Lowest,
     }
 }
@@ -90,6 +92,7 @@ impl<'p> Parser<'p> {
         parser.register_prefix(TokenType::BANG, Self::parse_prefix);
         parser.register_prefix(TokenType::MINUS, Self::parse_prefix);
         parser.register_prefix(TokenType::STRING, Self::parse_string_literal);
+        parser.register_prefix(TokenType::LBRACKET, Self::parse_array_literal);
 
         // populate infix parse fns
         parser.register_infix(TokenType::PLUS, Self::parse_infix);
@@ -101,6 +104,7 @@ impl<'p> Parser<'p> {
         parser.register_infix(TokenType::EQ, Self::parse_infix);
         parser.register_infix(TokenType::NEQ, Self::parse_infix);
         parser.register_infix(TokenType::LPAREN, Self::parse_call_expression);
+        parser.register_infix(TokenType::LBRACKET, Self::parse_index_expression);
 
         parser
     }
@@ -191,6 +195,19 @@ impl<'p> Parser<'p> {
         }
     }
 
+    fn parse_array_literal(&mut self) -> Option<Expression> {
+        let curr = self.curr_token.clone();
+
+        let elements = self
+            .parse_expression_list(TokenType::RBRACKET)
+            .unwrap_or(vec![]);
+
+        Some(Expression::Array(Array {
+            token: curr,
+            elements,
+        }))
+    }
+
     fn parse_boolean(&mut self) -> Option<Expression> {
         Some(Expression::Boolean(Boolean {
             token: self.curr_token.clone(),
@@ -200,7 +217,9 @@ impl<'p> Parser<'p> {
 
     fn parse_call_expression(&mut self, function: Option<Expression>) -> Option<Expression> {
         let curr = self.curr_token.clone();
-        let arguments = self.parse_call_arguments().unwrap_or(vec![]);
+        let arguments = self
+            .parse_expression_list(TokenType::RPAREN)
+            .unwrap_or(vec![]);
 
         if let Some(func) = function {
             return Some(Expression::Call(CallExpression {
@@ -213,32 +232,33 @@ impl<'p> Parser<'p> {
         None
     }
 
-    fn parse_call_arguments(&mut self) -> Option<Vec<Expression>> {
-        let mut args = vec![];
+    fn parse_expression_list(&mut self, end: TokenType) -> Option<Vec<Expression>> {
+        let mut list = vec![];
 
-        if self.peek_token_is(TokenType::RPAREN) {
+        if self.peek_token_is(end) {
             self.next_token();
-            return Some(args);
+            return Some(list);
         }
 
         self.next_token();
-        if let Some(arg) = self.parse_expression(Precedence::Lowest) {
-            args.push(arg);
+
+        if let Some(expr) = self.parse_expression(Lowest) {
+            list.push(expr);
         }
 
         while self.peek_token_is(TokenType::COMMA) {
             self.next_token();
             self.next_token();
-            if let Some(arg) = self.parse_expression(Precedence::Lowest) {
-                args.push(arg);
+            if let Some(expr) = self.parse_expression(Lowest) {
+                list.push(expr);
             }
         }
 
-        if !self.expect_peek(TokenType::RPAREN) {
+        if !self.expect_peek(end) {
             return None;
         }
 
-        Some(args)
+        Some(list)
     }
 
     fn parse_expression_statement(&mut self) -> Option<Statement> {
@@ -386,6 +406,27 @@ impl<'p> Parser<'p> {
                 consequence,
                 alternative,
             }));
+        }
+
+        None
+    }
+
+    fn parse_index_expression(&mut self, left: Option<Expression>) -> Option<Expression> {
+        if let Some(left) = left {
+            let curr = self.curr_token.clone();
+
+            self.next_token();
+            if let Some(index) = self.parse_expression(Lowest) {
+                if !self.expect_peek(TokenType::RBRACKET) {
+                    return None;
+                }
+
+                return Some(Expression::Index(IndexExpression {
+                    token: curr,
+                    left: Box::new(left),
+                    index: Box::new(index),
+                }));
+            }
         }
 
         None
@@ -1047,6 +1088,14 @@ mod tests {
                 input: "add(a + b + c * d / f + g)",
                 expected: "add((((a + b) + ((c * d) / f)) + g))",
             },
+            InputExpected {
+                input: "a * [1, 2, 3, 4][b * c] * d",
+                expected: "((a * ([1, 2, 3, 4][(b * c)])) * d)",
+            },
+            InputExpected {
+                input: "add(a * b[2], b[1], 2 * [1, 2][1])",
+                expected: "add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))",
+            },
         ];
 
         for input in tests {
@@ -1054,10 +1103,34 @@ mod tests {
             let program = parser.parse_program();
             check_for_parse_errors(&parser);
 
-            println!("{:?}\n\n", program.string());
-
             let actual = program.string();
             assert_eq!(actual, input.expected);
+        }
+    }
+
+    #[test]
+    fn test_parsing_array_literal() {
+        let input = "[1, 2 * 2, 3 + 3]";
+
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
+        check_for_parse_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        for stmt in program.statements {
+            match stmt {
+                Statement::ExpressionStmt(expr) => match expr {
+                    Expression::Array(array) => {
+                        assert_eq!(array.elements.len(), 3);
+                        test_integer_literal(array.elements.first().unwrap(), 1);
+                        test_infix_expression(array.elements.get(1).unwrap(), 2, "*", 2);
+                        test_infix_expression(array.elements.get(2).unwrap(), 3, "+", 3);
+                    }
+                    _ => panic!("Expected Expression Statement, got {:?}", expr),
+                },
+                _ => panic!("Expected Expression Statement, got {:?}", stmt),
+            }
         }
     }
 

@@ -3,7 +3,9 @@ use crate::{
     evaluator::builtins::get_builtin,
     object::{
         Env, Environment, FunctionObject, Object,
-        ObjectType::{self, Boolean, Builtin, Error, Function, Integer, Null, Return, StringObj},
+        ObjectType::{
+            self, Array, Boolean, Builtin, Error, Function, Integer, Null, Return, StringObj,
+        },
     },
 };
 
@@ -49,6 +51,14 @@ fn unwrap_return_value(obj: ObjectType) -> ObjectType {
     }
 }
 
+fn eval_array_expression(arr: &[ObjectType], idx: usize) -> ObjectType {
+    if idx > arr.len() - 1 {
+        return Null;
+    }
+
+    arr.get(idx).unwrap().clone()
+}
+
 fn eval_bang_operator_expression(right: ObjectType) -> ObjectType {
     match right {
         ObjectType::Boolean(b) => match b {
@@ -80,40 +90,43 @@ fn eval_block_statement(block: &BlockStatement, env: &Env) -> ObjectType {
 
 fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
     match expr {
+        Expression::Array(array) => {
+            let elements = eval_expressions(&array.elements, env);
+
+            Array(elements)
+        }
         Expression::Boolean(boolean) => get_boolean_object(boolean.value),
         Expression::Call(call_expression) => {
-            let function = eval_expression(&call_expression.function, &env);
+            let function = eval_expression(&call_expression.function, env);
 
             if is_error(&function) {
                 return function;
             }
 
-            let args = eval_expressions(&call_expression.arguments, &env);
+            let args = eval_expressions(&call_expression.arguments, env);
 
-            if args.len() == 1 {
-                if let Some(arg) = args.get(0)
-                    && is_error(arg)
-                {
-                    return arg.clone();
-                }
+            if args.len() == 1
+                && let Some(arg) = args.first()
+                && is_error(arg)
+            {
+                return arg.clone();
             }
 
             match function {
-                Function(function_obj) => {
-                    return apply_function(function_obj, &args);
-                }
+                Function(function_obj) => apply_function(function_obj, &args),
                 Builtin(func) => func(&args),
-                other => return new_error(format!("not a function: got={}", other.objtype())),
+                other => new_error(format!("not a function: got={}", other.objtype())),
             }
         }
         Expression::Function(function_literal) => {
             let parameters = function_literal.parameters.clone();
             let body = function_literal.body.clone();
-            return Function(FunctionObject {
+
+            Function(FunctionObject {
                 parameters,
                 body,
                 env: env.clone(),
-            });
+            })
         }
         Expression::Ident(identifier) => {
             if let Some(value) = env.borrow().get(&identifier.value) {
@@ -125,6 +138,19 @@ fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
             }
 
             new_error(format!("identifier not found: {}", identifier.value))
+        }
+        Expression::Index(index) => {
+            let left = eval_expression(&*index.left, env);
+            if is_error(&left) {
+                return left;
+            }
+
+            let index = eval_expression(&*index.index, env);
+            if is_error(&index) {
+                return index;
+            }
+
+            eval_index_expression(left, index)
         }
         Expression::IfExpr(if_expression) => eval_if_expression(if_expression, env),
         Expression::InfixExpr(infix) => {
@@ -185,6 +211,19 @@ fn eval_if_expression(expr: &IfExpression, env: &Env) -> ObjectType {
         eval_statements(&alternative.statements, env)
     } else {
         Null
+    }
+}
+
+fn eval_index_expression(left: ObjectType, index: ObjectType) -> ObjectType {
+    match (left, index) {
+        (Array(arr), Integer(index)) => {
+            if index < 0 {
+                return Null;
+            }
+
+            eval_array_expression(&arr, index as usize)
+        }
+        (other, _) => new_error(format!("index operator not supported: {}", other.objtype())),
     }
 }
 
@@ -394,6 +433,79 @@ mod tests {
 
     fn test_null_object(obj: ObjectType) {
         assert_eq!(obj, Null)
+    }
+
+    #[test]
+    fn test_array_index_expressions() {
+        let tests = vec![
+            InputExpected {
+                input: "[1, 2, 3][0]",
+                expected: Some(1),
+            },
+            InputExpected {
+                input: "[1, 2, 3][1]",
+                expected: Some(2),
+            },
+            InputExpected {
+                input: "[1, 2, 3][2]",
+                expected: Some(3),
+            },
+            InputExpected {
+                input: "let i = 0; [1][i];",
+                expected: Some(1),
+            },
+            InputExpected {
+                input: "[1, 2, 3][1 + 1];",
+                expected: Some(3),
+            },
+            InputExpected {
+                input: "let myArray = [1, 2, 3]; myArray[2];",
+                expected: Some(3),
+            },
+            InputExpected {
+                input: "let myArray = [1, 2, 3]; myArray[0] + myArray[1] + myArray[2];",
+                expected: Some(6),
+            },
+            InputExpected {
+                input: "let myArray = [1, 2, 3]; let i = myArray[0]; myArray[i]",
+                expected: Some(2),
+            },
+            InputExpected {
+                input: "[1, 2, 3][3]",
+                expected: None,
+            },
+            InputExpected {
+                input: "[1, 2, 3][-1]",
+                expected: None,
+            },
+        ];
+
+        for test in tests {
+            let evaluated = test_eval(test.input);
+
+            match test.expected {
+                Some(i) => test_integer_object(evaluated, i),
+                None => test_null_object(evaluated),
+            }
+        }
+    }
+
+    #[test]
+    fn test_array_literal() {
+        let input = "[1, 2 * 2, 3 + 3]";
+
+        let evaluated = test_eval(input);
+
+        match evaluated {
+            ObjectType::Array(array) => {
+                assert_eq!(array.len(), 3);
+
+                test_integer_object(array.first().unwrap().clone(), 1);
+                test_integer_object(array.get(1).unwrap().clone(), 4);
+                test_integer_object(array.get(2).unwrap().clone(), 6);
+            }
+            other => panic!("object is not an Array. got={other:?}"),
+        }
     }
 
     #[test]
