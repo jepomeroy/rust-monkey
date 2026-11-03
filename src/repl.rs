@@ -4,7 +4,7 @@ use std::io::{self, BufRead, Write};
 
 use crate::{
     ast::Node::ProgramNode,
-    evaluator::eval,
+    evaluator::evaluator::eval,
     lexer::Lexer,
     object::{Environment, Object},
     parser::Parser,

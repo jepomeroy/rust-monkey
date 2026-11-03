@@ -7,6 +7,8 @@ pub(crate) trait Object {
     fn inspect(&self) -> String;
 }
 
+pub(crate) type BuiltinFunction = fn(args: &[ObjectType]) -> ObjectType;
+
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct FunctionObject {
     pub(crate) parameters: Vec<Expression>,
@@ -42,6 +44,7 @@ impl Object for FunctionObject {
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum ObjectType {
     Boolean(bool),
+    Builtin(BuiltinFunction),
     Error(String),
     Function(FunctionObject),
     Integer(i64),
@@ -54,6 +57,7 @@ impl Object for ObjectType {
     fn objtype(&self) -> String {
         match self {
             ObjectType::Boolean(_) => "BOOLEAN".to_string(),
+            ObjectType::Builtin(_) => "BUILTIN".to_string(),
             ObjectType::Error(_) => "ERROR".to_string(),
             ObjectType::Function(f) => f.objtype(),
             ObjectType::Integer(_) => "INTEGER".to_string(),
@@ -66,6 +70,7 @@ impl Object for ObjectType {
     fn inspect(&self) -> String {
         match self {
             ObjectType::Boolean(b) => format!("{}", b),
+            ObjectType::Builtin(_) => "builtin function".to_string(),
             ObjectType::Error(e) => e.clone(),
             ObjectType::Function(f) => f.inspect(),
             ObjectType::Integer(i) => format!("{}", i),

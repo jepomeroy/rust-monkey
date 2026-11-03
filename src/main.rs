@@ -10,6 +10,8 @@ mod lexer;
 mod object;
 mod parser;
 mod repl;
+#[cfg(test)]
+mod test_utils;
 mod token;
 
 use std::{

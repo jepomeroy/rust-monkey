@@ -1,8 +1,9 @@
 use crate::{
     ast::{BlockStatement, Expression, IfExpression, Node, NodeType, Program, Statement},
+    evaluator::builtins::get_builtin,
     object::{
         Env, Environment, FunctionObject, Object,
-        ObjectType::{self, Boolean, Error, Function, Integer, Null, Return, StringObj},
+        ObjectType::{self, Boolean, Builtin, Error, Function, Integer, Null, Return, StringObj},
     },
 };
 
@@ -101,6 +102,7 @@ fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
                 Function(function_obj) => {
                     return apply_function(function_obj, &args);
                 }
+                Builtin(func) => func(&args),
                 other => return new_error(format!("not a function: got={}", other.objtype())),
             }
         }
@@ -116,6 +118,10 @@ fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
         Expression::Ident(identifier) => {
             if let Some(value) = env.borrow().get(&identifier.value) {
                 return value;
+            }
+
+            if let Some(builtin) = get_builtin(&identifier.value) {
+                return ObjectType::Builtin(builtin);
             }
 
             new_error(format!("identifier not found: {}", identifier.value))
@@ -344,7 +350,7 @@ fn is_truthy(obj: ObjectType) -> bool {
     }
 }
 
-fn new_error(err: String) -> ObjectType {
+pub(crate) fn new_error(err: String) -> ObjectType {
     Error(err)
 }
 
@@ -358,14 +364,10 @@ mod tests {
             ObjectType::{self, StringObj},
         },
         parser::Parser,
+        test_utils::{InputExpected, Value},
     };
 
     use super::*;
-
-    struct InputExpected<'ie, T> {
-        input: &'ie str,
-        expected: T,
-    }
 
     fn test_eval(input: &str) -> ObjectType {
         let lexer = Lexer::new(input);
@@ -427,6 +429,45 @@ mod tests {
             let evaluated = test_eval(test.input);
 
             test_boolean_object(evaluated, test.expected);
+        }
+    }
+
+    #[test]
+    fn test_builtin_function() {
+        let tests = vec![
+            InputExpected::<Value> {
+                input: r#"len("")"#,
+                expected: 0.into(),
+            },
+            InputExpected {
+                input: r#"len("four")"#,
+                expected: 4.into(),
+            },
+            InputExpected {
+                input: r#"len("hello world")"#,
+                expected: 11.into(),
+            },
+            InputExpected {
+                input: r#"len(1)"#,
+                expected: "argument to `len` not supported. got INTEGER".into(),
+            },
+            InputExpected {
+                input: r#"len("one", "two")"#,
+                expected: "wrong number of arguments. got=2 want=1".into(),
+            },
+        ];
+
+        for test in tests {
+            let evaluated = test_eval(test.input);
+
+            match test.expected {
+                Value::Int(i) => test_integer_object(evaluated, i),
+                Value::Message(s) => match evaluated {
+                    Error(m) => assert_eq!(m, s),
+                    other => panic!("Expect an error message. got={other:?}"),
+                },
+                _ => (),
+            }
         }
     }
 

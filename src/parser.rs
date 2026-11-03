@@ -531,48 +531,14 @@ mod tests {
     use std::vec;
 
     use crate::ast::{NodeType, Statement};
+    use crate::test_utils::{InputExpected, Value};
 
     use super::*;
-
-    struct InputExpected<'ie, T> {
-        input: &'ie str,
-        expected: T,
-    }
 
     struct LetTestData<'ltd, T> {
         input: &'ltd str,
         expected_ident: &'ltd str,
         expected: T,
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    enum Value<'a> {
-        Int(i64),
-        Ident(&'a str),
-        Boolean(bool),
-    }
-
-    // These let callers pass plain values: test_infix_expression(&e, 5, "+", "x")
-    impl From<i64> for Value<'_> {
-        fn from(v: i64) -> Self {
-            Value::Int(v)
-        }
-    }
-    impl From<i32> for Value<'_> {
-        fn from(v: i32) -> Self {
-            Value::Int(v as i64)
-        }
-    }
-    impl<'a> From<&'a str> for Value<'a> {
-        fn from(v: &'a str) -> Self {
-            Value::Ident(v)
-        }
-    }
-
-    impl<'a> From<bool> for Value<'_> {
-        fn from(v: bool) -> Self {
-            Value::Boolean(v)
-        }
     }
 
     fn check_for_parse_errors(p: &Parser) {
@@ -626,7 +592,7 @@ mod tests {
     fn test_literal_expression<'a>(exp: &Expression, expected: impl Into<Value<'a>>) {
         match expected.into() {
             Value::Boolean(v) => test_boolean_literal(exp, v),
-            Value::Ident(v) => test_identifier(exp, v),
+            Value::Message(v) => test_identifier(exp, v),
             Value::Int(v) => test_integer_literal(exp, v),
         }
     }
@@ -952,7 +918,7 @@ mod tests {
             LetTestData {
                 input: "let foobar = y;",
                 expected_ident: "foobar",
-                expected: Value::Ident("y"),
+                expected: Value::Message("y"),
             },
         ];
 
