@@ -50,6 +50,7 @@ pub(crate) enum Expression {
     Boolean(Boolean),
     Call(CallExpression),
     Function(FunctionLiteral),
+    Hash(HashLiteral),
     Ident(Identifier),
     Index(IndexExpression),
     IfExpr(IfExpression),
@@ -66,6 +67,7 @@ impl NodeType for Expression {
             Expression::Boolean(boolean) => boolean.token_literal(),
             Expression::Call(call_expression) => call_expression.token_literal(),
             Expression::Function(function_literal) => function_literal.token_literal(),
+            Expression::Hash(hash_literal) => hash_literal.token_literal(),
             Expression::Ident(identifier) => identifier.token_literal(),
             Expression::Index(index_expression) => index_expression.token_literal(),
             Expression::IfExpr(if_expression) => if_expression.token_literal(),
@@ -82,6 +84,7 @@ impl NodeType for Expression {
             Expression::Boolean(boolean) => boolean.string(),
             Expression::Call(call_expression) => call_expression.string(),
             Expression::Function(function_literal) => function_literal.string(),
+            Expression::Hash(hash_literal) => hash_literal.string(),
             Expression::Ident(identifier) => identifier.string(),
             Expression::Index(index_expression) => index_expression.string(),
             Expression::IfExpr(if_expression) => if_expression.string(),
@@ -141,7 +144,7 @@ impl NodeType for Array {
     fn string(&self) -> String {
         let mut out = String::new();
 
-        out.push_str("[");
+        out.push('[');
         out.push_str(
             self.elements
                 .iter()
@@ -150,7 +153,7 @@ impl NodeType for Array {
                 .join(", ")
                 .as_str(),
         );
-        out.push_str("]");
+        out.push(']');
 
         out
     }
@@ -266,7 +269,37 @@ impl NodeType for FunctionLiteral {
     }
 }
 
-/// Expression types
+/// HashMap type
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct HashLiteral {
+    pub(crate) token: Token,
+    pub(crate) pairs: Vec<(Expression, Expression)>,
+}
+
+impl NodeType for HashLiteral {
+    fn token_literal(&self) -> String {
+        self.token.literal.clone()
+    }
+
+    fn string(&self) -> String {
+        let mut out = String::new();
+
+        out.push('{');
+        out.push_str(
+            self.pairs
+                .iter()
+                .map(|p| format!("{}:{}", p.0.string(), p.1.string()))
+                .collect::<Vec<String>>()
+                .join(", ")
+                .as_str(),
+        );
+        out.push('}');
+
+        out
+    }
+}
+
+/// Identifier types
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct Identifier {
     pub(crate) token: Token,
@@ -299,10 +332,10 @@ impl NodeType for IndexExpression {
     fn string(&self) -> String {
         let mut out = String::new();
 
-        out.push_str("(");
-        out.push_str(&self.left.string().as_str());
-        out.push_str("[");
-        out.push_str(&self.index.string().as_str());
+        out.push('(');
+        out.push_str(self.left.string().as_str());
+        out.push('[');
+        out.push_str(self.index.string().as_str());
         out.push_str("])");
 
         out

@@ -6,8 +6,8 @@ use crate::{
     ast::{
         Array, BlockStatement, Boolean, CallExpression,
         Expression::{self, StringExpr},
-        FunctionLiteral, Identifier, IfExpression, IndexExpression, Infix, IntegerLiteral,
-        LetStatement, Prefix, Program, ReturnStatement,
+        FunctionLiteral, HashLiteral, Identifier, IfExpression, IndexExpression, Infix,
+        IntegerLiteral, LetStatement, Prefix, Program, ReturnStatement,
         Statement::{self, ExpressionStmt},
         StringExpression,
     },
@@ -15,7 +15,7 @@ use crate::{
     parser::Precedence::Lowest,
     token::{
         Token,
-        TokenType::{self, ASSIGN},
+        TokenType::{self},
     },
 };
 
@@ -93,6 +93,7 @@ impl<'p> Parser<'p> {
         parser.register_prefix(TokenType::MINUS, Self::parse_prefix);
         parser.register_prefix(TokenType::STRING, Self::parse_string_literal);
         parser.register_prefix(TokenType::LBRACKET, Self::parse_array_literal);
+        parser.register_prefix(TokenType::LBRACE, Self::parse_hash_literal);
 
         // populate infix parse fns
         parser.register_infix(TokenType::PLUS, Self::parse_infix);
@@ -361,6 +362,39 @@ impl<'p> Parser<'p> {
         expr
     }
 
+    fn parse_hash_literal(&mut self) -> Option<Expression> {
+        let curr = self.curr_token.clone();
+        let mut pairs = vec![];
+
+        while !self.peek_token_is(TokenType::RBRACE) {
+            self.next_token();
+            let Some(key) = self.parse_expression(Lowest) else {
+                return None;
+            };
+
+            if !self.expect_peek(TokenType::COLON) {
+                return None;
+            }
+
+            self.next_token();
+            let Some(value) = self.parse_expression(Lowest) else {
+                return None;
+            };
+
+            pairs.push((key, value));
+
+            if !self.peek_token_is(TokenType::RBRACE) && !self.expect_peek(TokenType::COMMA) {
+                return None;
+            }
+        }
+
+        if !self.expect_peek(TokenType::RBRACE) {
+            return None;
+        }
+
+        Some(Expression::Hash(HashLiteral { token: curr, pairs }))
+    }
+
     fn parse_identifier(&mut self) -> Option<Expression> {
         Some(Expression::Ident(Identifier {
             token: self.curr_token.clone(),
@@ -480,7 +514,7 @@ impl<'p> Parser<'p> {
             value: self.curr_token.literal.clone(),
         };
 
-        if !self.expect_peek(ASSIGN) {
+        if !self.expect_peek(TokenType::ASSIGN) {
             return None;
         }
 
@@ -1131,6 +1165,111 @@ mod tests {
                 },
                 _ => panic!("Expected Expression Statement, got {:?}", stmt),
             }
+        }
+    }
+    #[test]
+    fn test_parsing_empty_hash_literal() {
+        let input = "{}";
+
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
+        check_for_parse_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        for stmt in program.statements {
+            match stmt {
+                ExpressionStmt(expr) => match expr {
+                    Expression::Hash(hash_literal) => {
+                        assert_eq!(hash_literal.pairs.len(), 0);
+                    }
+                    other => panic!("Expression is not HashLiteral, got {other:?}"),
+                },
+                _ => panic!("Expected Expression Statement, got {:?}", stmt),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parsing_hash_literals_string_keys() {
+        let input = r#"{"one": 1, "two": 2, "three": 3}"#;
+
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
+        check_for_parse_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        for stmt in program.statements {
+            match stmt {
+                ExpressionStmt(expr) => match expr {
+                    Expression::Hash(hash_literal) => {
+                        assert_eq!(hash_literal.pairs.len(), 3);
+
+                        let mut expected = HashMap::new();
+                        expected.insert("one".to_string(), 1_i64);
+                        expected.insert("two".to_string(), 2_i64);
+                        expected.insert("three".to_string(), 3_i64);
+
+                        for (key, value) in hash_literal.pairs {
+                            match (key, value.clone()) {
+                                (StringExpr(string_expr), Expression::Integer(_)) => {
+                                    let expected_value =
+                                        expected.get(&string_expr.string()).unwrap();
+
+                                    test_integer_literal(&value, *expected_value);
+                                }
+                                other => panic!("Expected String, Integer Pair. got {other:?}"),
+                            }
+                        }
+                    }
+                    other => panic!("Expression is not HashLiteral, got {other:?}"),
+                },
+                _ => panic!("Expected Expression Statement, got {:?}", stmt),
+            }
+        }
+    }
+
+    #[test]
+    fn test_parsing_hash_literal_with_expressions() {
+        let input = r#"{"one": 0 + 1, "two": 10 - 8, "three": 15 / 5}"#;
+
+        let mut parser = make_program(input);
+        let program = parser.parse_program();
+        check_for_parse_errors(&parser);
+
+        assert_eq!(program.statements.len(), 1);
+
+        let Statement::ExpressionStmt(expr) = &program.statements[0] else {
+            panic!(
+                "Expected Expression Statement, got {:?}",
+                program.statements[0]
+            );
+        };
+
+        let Expression::Hash(hash) = expr else {
+            panic!("exp is not HashLiteral. got={expr:?}");
+        };
+
+        assert_eq!(hash.pairs.len(), 3, "hash.pairs has wrong length");
+
+        let tests: HashMap<&str, (i64, &str, i64)> = HashMap::from([
+            ("one", (0, "+", 1)),
+            ("two", (10, "-", 8)),
+            ("three", (15, "/", 5)),
+        ]);
+
+        for (key, value) in &hash.pairs {
+            let StringExpr(literal) = key else {
+                panic!("key is not StringLiteral. got={key:?}");
+            };
+
+            let key = literal.string();
+            let Some(&(left, operator, right)) = tests.get(key.as_str()) else {
+                panic!("No test function for key {key:?} found");
+            };
+
+            test_infix_expression(value, left, operator, right);
         }
     }
 

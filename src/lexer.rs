@@ -27,11 +27,11 @@ impl<'src> Lexer<'src> {
     }
 
     fn is_letter(ch: u8) -> bool {
-        (b'a'..=b'z').contains(&ch) || (b'A'..=b'Z').contains(&ch)
+        ch.is_ascii_lowercase() || ch.is_ascii_uppercase()
     }
 
     fn is_digit(ch: u8) -> bool {
-        (b'0'..=b'9').contains(&ch)
+        ch.is_ascii_digit()
     }
 
     /// Returns the next token, advancing past it.
@@ -71,6 +71,7 @@ impl<'src> Lexer<'src> {
             b'<' => Token::new(TokenType::LT, "<"),
             b'>' => Token::new(TokenType::GT, ">"),
             b';' => Token::new(TokenType::SEMICOLON, ";"),
+            b':' => Token::new(TokenType::COLON, ":"),
             b'"' => Token::new(TokenType::STRING, self.read_string()),
             0 => Token::new(TokenType::EOF, ""),
             _ => {
@@ -162,7 +163,7 @@ impl<'src> Lexer<'src> {
             self.read_char();
         }
 
-        return self.input[position..self.position].to_string();
+        self.input[position..self.position].to_string()
     }
 
     fn skip_whitespace(&mut self) {
@@ -202,6 +203,7 @@ mod tests {
             "foobar"
             "foo bar"
             [1, 2];
+            {"foo": "bar"}
             "#;
 
         let tests = [
@@ -286,6 +288,11 @@ mod tests {
             Token::new(TokenType::INT, "2"),
             Token::new(TokenType::RBRACKET, "]"),
             Token::new(TokenType::SEMICOLON, ";"),
+            Token::new(TokenType::LBRACE, "{"),
+            Token::new(TokenType::STRING, "foo"),
+            Token::new(TokenType::COLON, ":"),
+            Token::new(TokenType::STRING, "bar"),
+            Token::new(TokenType::RBRACE, "}"),
             Token::new(TokenType::EOF, ""),
         ];
 

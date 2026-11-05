@@ -27,6 +27,7 @@ pub(crate) enum TokenType {
     // Delimiters
     COMMA,
     SEMICOLON,
+    COLON,
     LPAREN,
     RPAREN,
     LBRACE,
@@ -44,7 +45,7 @@ pub(crate) enum TokenType {
 }
 
 /// A single token: its kind plus the exact source text it was read from.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub(crate) struct Token {
     pub token: TokenType,
     pub literal: String,
@@ -74,6 +75,7 @@ impl Display for TokenType {
             TokenType::NEQ => write!(f, "!="),
             TokenType::COMMA => write!(f, ","),
             TokenType::SEMICOLON => write!(f, ";"),
+            TokenType::COLON => write!(f, ":"),
             TokenType::LPAREN => write!(f, "("),
             TokenType::RPAREN => write!(f, ")"),
             TokenType::LBRACE => write!(f, "{{"),

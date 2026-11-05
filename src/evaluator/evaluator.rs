@@ -1,10 +1,14 @@
+use std::collections::HashMap;
+
 use crate::{
-    ast::{BlockStatement, Expression, IfExpression, Node, NodeType, Program, Statement},
+    ast::{
+        BlockStatement, Expression, HashLiteral, IfExpression, Node, NodeType, Program, Statement,
+    },
     evaluator::builtins::get_builtin,
     object::{
-        Env, Environment, FunctionObject, Object,
+        Env, Environment, FunctionObject, HashPair, Object,
         ObjectType::{
-            self, Array, Boolean, Builtin, Error, Function, Integer, Null, Return, StringObj,
+            self, Array, Boolean, Builtin, Error, Function, Hash, Integer, Null, Return, StringObj,
         },
     },
 };
@@ -128,6 +132,7 @@ fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
                 env: env.clone(),
             })
         }
+        Expression::Hash(hash) => eval_hash_literal(hash, env),
         Expression::Ident(identifier) => {
             if let Some(value) = env.borrow().get(&identifier.value) {
                 return value;
@@ -198,6 +203,46 @@ fn eval_expressions(exps: &[Expression], env: &Env) -> Vec<ObjectType> {
     result
 }
 
+fn eval_hash_index_expression(hash: &ObjectType, index: &ObjectType) -> ObjectType {
+    match hash {
+        Hash(hash_map) => {
+            if let Some(val) = hash_map.get(&index.hash_key()) {
+                return *val.value.clone();
+            }
+
+            Null
+        }
+        other => new_error(format!("Expected HASH object. got {other:?}")),
+    }
+}
+
+fn eval_hash_literal(hash: &HashLiteral, env: &Env) -> ObjectType {
+    let mut pairs_hash_map = HashMap::new();
+
+    for (key_expr, value_expr) in &hash.pairs {
+        let key = eval_expression(key_expr, env);
+        if is_error(&key) {
+            return key;
+        };
+
+        let value = eval_expression(value_expr, env);
+        if is_error(&value) {
+            return value;
+        };
+
+        let hash_key = key.hash_key();
+        pairs_hash_map.insert(
+            hash_key,
+            HashPair {
+                key: Box::new(key),
+                value: Box::new(value),
+            },
+        );
+    }
+
+    Hash(pairs_hash_map)
+}
+
 fn eval_if_expression(expr: &IfExpression, env: &Env) -> ObjectType {
     let condition = eval_expression(&expr.condition, env);
 
@@ -215,14 +260,15 @@ fn eval_if_expression(expr: &IfExpression, env: &Env) -> ObjectType {
 }
 
 fn eval_index_expression(left: ObjectType, index: ObjectType) -> ObjectType {
-    match (left, index) {
+    match (&left, &index) {
         (Array(arr), Integer(index)) => {
-            if index < 0 {
+            if *index < 0 {
                 return Null;
             }
 
-            eval_array_expression(&arr, index as usize)
+            eval_array_expression(&arr, *index as usize)
         }
+        (Hash(_), _) => eval_hash_index_expression(&left, &index),
         (other, _) => new_error(format!("index operator not supported: {}", other.objtype())),
     }
 }
@@ -395,11 +441,13 @@ pub(crate) fn new_error(err: String) -> ObjectType {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use crate::{
         ast::NodeType,
         lexer::Lexer,
         object::{
-            Environment,
+            Environment, HashKey,
             ObjectType::{self, StringObj},
         },
         parser::Parser,
@@ -889,6 +937,94 @@ mod tests {
 
         for test in tests {
             test_integer_object(test_eval(test.input), test.expected)
+        }
+    }
+
+    #[test]
+    fn test_hash_index_expression() {
+        let tests = vec![
+            InputExpected {
+                input: r#"{"foo": 5}["foo"]"#,
+                expected: Some(5),
+            },
+            InputExpected {
+                input: r#"{"foo": 5}["bar"]"#,
+                expected: None,
+            },
+            InputExpected {
+                input: r#"let key = "foo"; {"foo": 5}[key]"#,
+                expected: Some(5),
+            },
+            InputExpected {
+                input: r#"{}["foo"]"#,
+                expected: None,
+            },
+            InputExpected {
+                input: r#"{5: 5}[5]"#,
+                expected: Some(5),
+            },
+            InputExpected {
+                input: r#"   `{true: 5}[true]"#,
+                expected: Some(5),
+            },
+            InputExpected {
+                input: r#"{false: 5}[false]"#,
+                expected: Some(5),
+            },
+        ];
+
+        for test in tests {
+            let evaluated = test_eval(test.input);
+
+            match test.expected {
+                Some(i) => test_integer_object(evaluated, i),
+                None => test_null_object(evaluated),
+            }
+        }
+    }
+
+    #[test]
+    fn test_hash_literals() {
+        let input = r#"
+            let two = "two";
+            {
+                "one": 10 - 9,
+                two: 1 + 1,
+                "thr" + "ee": 6 / 2,
+                4: 4,
+                true: 5,
+                false: 6
+            }"#;
+
+        let evaluated = test_eval(input);
+
+        let pairs = match evaluated {
+            ObjectType::Hash(hash_map) => hash_map,
+            other => panic!("Eval did not return a Hash. got {other:?}"),
+        };
+
+        let expected: HashMap<HashKey, i64> = HashMap::from([
+            (StringObj("one".to_string()).hash_key(), 1),
+            (StringObj("two".to_string()).hash_key(), 2),
+            (StringObj("three".to_string()).hash_key(), 3),
+            (Integer(4).hash_key(), 4),
+            (TRUE.hash_key(), 5),
+            (FALSE.hash_key(), 6),
+        ]);
+
+        assert_eq!(
+            pairs.len(),
+            expected.len(),
+            "Hash has wrong num of pairs. got={}",
+            pairs.len()
+        );
+
+        for (expected_key, expected_value) in expected {
+            let pair = pairs
+                .get(&expected_key)
+                .unwrap_or_else(|| panic!("no pair for given key {expected_key:?} in Pairs"));
+
+            test_integer_object(*pair.value.clone(), expected_value);
         }
     }
 
