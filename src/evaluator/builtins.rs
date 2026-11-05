@@ -1,22 +1,43 @@
 use std::process;
 
 use crate::{
-    evaluator::evaluator::new_error,
+    evaluator::eval::new_error,
     object::{
-        BuiltinFunction, Object,
+        Builtin, Object,
         ObjectType::{self, Integer, Null},
     },
 };
 
-pub(crate) fn get_builtin(func: &str) -> Option<BuiltinFunction> {
+pub(crate) fn get_builtin(func: &str) -> Option<Builtin> {
     match func {
-        "exit" => Some(exit_function),
-        "first" => Some(first_function),
-        "last" => Some(last_function),
-        "len" => Some(len_function),
-        "push" => Some(push_function),
-        "puts" => Some(puts_function),
-        "rest" => Some(rest_function),
+        "exit" => Some(Builtin {
+            name: "exit",
+            func: exit_function,
+        }),
+        "first" => Some(Builtin {
+            name: "first",
+            func: first_function,
+        }),
+        "last" => Some(Builtin {
+            name: "last",
+            func: last_function,
+        }),
+        "len" => Some(Builtin {
+            name: "last",
+            func: len_function,
+        }),
+        "push" => Some(Builtin {
+            name: "last",
+            func: push_function,
+        }),
+        "puts" => Some(Builtin {
+            name: "last",
+            func: puts_function,
+        }),
+        "rest" => Some(Builtin {
+            name: "last",
+            func: rest_function,
+        }),
         _ => None,
     }
 }
@@ -111,7 +132,7 @@ fn push_function(args: &[ObjectType]) -> ObjectType {
             match obj {
                 ObjectType::Array(arr) => {
                     let mut new_arr = vec![];
-                    new_arr.extend_from_slice(&arr);
+                    new_arr.extend_from_slice(arr);
                     new_arr.push(appended);
                     ObjectType::Array(new_arr)
                 }

@@ -27,6 +27,18 @@ pub(crate) trait Object {
 
 pub(crate) type BuiltinFunction = fn(args: &[ObjectType]) -> ObjectType;
 
+#[derive(Debug, Clone)]
+pub(crate) struct Builtin {
+    pub(crate) name: &'static str,
+    pub(crate) func: BuiltinFunction,
+}
+
+impl PartialEq for Builtin {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct FunctionObject {
     pub(crate) parameters: Vec<Expression>,
@@ -70,7 +82,7 @@ impl Object for FunctionObject {
 pub(crate) enum ObjectType {
     Array(Vec<ObjectType>),
     Boolean(bool),
-    Builtin(BuiltinFunction),
+    Builtin(Builtin),
     Error(String),
     Function(FunctionObject),
     Hash(HashMap<HashKey, HashPair>),

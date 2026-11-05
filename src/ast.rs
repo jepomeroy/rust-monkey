@@ -2,13 +2,6 @@
 
 use crate::token::Token;
 
-pub(crate) enum Node {
-    StatementNode(Statement),
-    ExpressionNode(Expression),
-    BlockStatementNode(BlockStatement),
-    ProgramNode(Program),
-}
-
 // Common interface for every node in the AST.
 pub(crate) trait NodeType {
     /// The literal text of the token this node is associated with.
@@ -520,19 +513,19 @@ mod tests {
         let program = Program {
             statements: vec![Statement::Let(LetStatement {
                 token: Token {
-                    token: TokenType::LET,
+                    token: TokenType::Let,
                     literal: "let".to_string(),
                 },
                 name: Identifier {
                     token: Token {
-                        token: TokenType::IDENT,
+                        token: TokenType::Ident,
                         literal: "myVar".to_string(),
                     },
                     value: "myVar".to_string(),
                 },
                 value: Box::new(Expression::Integer(IntegerLiteral {
                     token: Token {
-                        token: TokenType::INT,
+                        token: TokenType::Int,
                         literal: "5".to_string(),
                     },
                     value: 5,

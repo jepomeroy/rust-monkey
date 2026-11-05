@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{
-        BlockStatement, Expression, HashLiteral, IfExpression, Node, NodeType, Program, Statement,
-    },
+    ast::{BlockStatement, Expression, HashLiteral, IfExpression, NodeType, Program, Statement},
     evaluator::builtins::get_builtin,
     object::{
         Env, Environment, FunctionObject, HashPair, Object,
@@ -16,13 +14,8 @@ use crate::{
 const TRUE: ObjectType = ObjectType::Boolean(true);
 const FALSE: ObjectType = ObjectType::Boolean(false);
 
-pub(crate) fn eval(node: &Node, env: &Env) -> ObjectType {
-    match node {
-        Node::StatementNode(statement) => eval_statement(statement, env),
-        Node::ExpressionNode(expression) => eval_expression(expression, env),
-        Node::BlockStatementNode(block_statement) => eval_block_statement(block_statement, env),
-        Node::ProgramNode(program) => eval_program(program, env),
-    }
+pub(crate) fn eval(program: &Program, env: &Env) -> ObjectType {
+    eval_program(program, env)
 }
 
 fn apply_function(function: FunctionObject, args: &[ObjectType]) -> ObjectType {
@@ -36,12 +29,9 @@ fn extend_function_env(func: &FunctionObject, args: &[ObjectType]) -> Env {
     let env = Environment::new_enclosed(func.env.clone());
 
     for (i, param) in func.parameters.iter().enumerate() {
-        match param {
-            Expression::Ident(identifier) => {
-                env.borrow_mut()
-                    .set(&identifier.value, args.get(i).unwrap().clone());
-            }
-            _ => (),
+        if let Expression::Ident(identifier) = param {
+            env.borrow_mut()
+                .set(&identifier.value, args.get(i).unwrap().clone());
         }
     }
 
@@ -118,7 +108,7 @@ fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
 
             match function {
                 Function(function_obj) => apply_function(function_obj, &args),
-                Builtin(func) => func(&args),
+                Builtin(builtin) => (builtin.func)(&args),
                 other => new_error(format!("not a function: got={}", other.objtype())),
             }
         }
@@ -145,12 +135,12 @@ fn eval_expression(expr: &Expression, env: &Env) -> ObjectType {
             new_error(format!("identifier not found: {}", identifier.value))
         }
         Expression::Index(index) => {
-            let left = eval_expression(&*index.left, env);
+            let left = eval_expression(&index.left, env);
             if is_error(&left) {
                 return left;
             }
 
-            let index = eval_expression(&*index.index, env);
+            let index = eval_expression(&index.index, env);
             if is_error(&index) {
                 return index;
             }
@@ -266,7 +256,7 @@ fn eval_index_expression(left: ObjectType, index: ObjectType) -> ObjectType {
                 return Null;
             }
 
-            eval_array_expression(&arr, *index as usize)
+            eval_array_expression(arr, *index as usize)
         }
         (Hash(_), _) => eval_hash_index_expression(&left, &index),
         (other, _) => new_error(format!("index operator not supported: {}", other.objtype())),
@@ -288,7 +278,7 @@ fn eval_infix_operator(operator: &str, left: ObjectType, right: ObjectType) -> O
             ))
         }
         (StringObj(left_val), StringObj(right_val)) => {
-            if let Some(st) = eval_string_infix_operator(operator, &*left_val, &*right_val) {
+            if let Some(st) = eval_string_infix_operator(operator, left_val, right_val) {
                 return st;
             }
 
@@ -370,7 +360,7 @@ fn eval_program(program: &Program, env: &Env) -> ObjectType {
 fn eval_statement(stmt: &Statement, env: &Env) -> ObjectType {
     match stmt {
         Statement::Let(let_statement) => {
-            let value = eval_expression(&*let_statement.value, env);
+            let value = eval_expression(&let_statement.value, env);
 
             if is_error(&value) {
                 return value;
@@ -421,10 +411,7 @@ fn get_boolean_object(input: bool) -> ObjectType {
 }
 
 fn is_error(obj: &ObjectType) -> bool {
-    match obj {
-        Error(_) => true,
-        _ => false,
-    }
+    matches!(obj, Error(_))
 }
 
 fn is_truthy(obj: ObjectType) -> bool {
@@ -462,7 +449,7 @@ mod tests {
         let program = parser.parse_program();
         let env = Environment::new();
 
-        eval(&Node::ProgramNode(program), &env)
+        eval(&program, &env)
     }
 
     fn test_boolean_object(obj: ObjectType, expected: bool) {
@@ -835,7 +822,7 @@ mod tests {
         match evaluated {
             ObjectType::Function(func) => {
                 assert_eq!(func.parameters.len(), 1);
-                assert_eq!(func.parameters.get(0).unwrap().string(), "x");
+                assert_eq!(func.parameters.first().unwrap().string(), "x");
                 assert_eq!(func.body.string(), "(x + 2)");
             }
             other => panic!("object is not a Function. got={other:?}"),

@@ -7,8 +7,7 @@
 use std::io::{self, BufRead, Write};
 
 use crate::{
-    ast::Node::ProgramNode,
-    evaluator::evaluator::eval,
+    evaluator::eval::eval,
     lexer::Lexer,
     object::{Env, Environment, Object, ObjectType},
     parser::Parser,
@@ -81,7 +80,7 @@ fn run<W: Write>(source: &str, env: &Env, out: &mut W) -> io::Result<()> {
         return print_parser_errors(out, parser.errors());
     }
 
-    let evaluated = eval(&ProgramNode(program), env);
+    let evaluated = eval(&program, env);
     if evaluated != ObjectType::Null {
         writeln!(out, "{}", evaluated.inspect())?;
     }
@@ -100,9 +99,9 @@ fn bracket_depth(source: &str) -> i32 {
 
     loop {
         match lexer.next_token().token {
-            TokenType::LPAREN | TokenType::LBRACE | TokenType::LBRACKET => depth += 1,
-            TokenType::RPAREN | TokenType::RBRACE | TokenType::RBRACKET => depth -= 1,
-            TokenType::EOF => return depth,
+            TokenType::Lparen | TokenType::Lbrace | TokenType::Lbracket => depth += 1,
+            TokenType::Rparen | TokenType::Rbrace | TokenType::Rbracket => depth -= 1,
+            TokenType::Eof => return depth,
             _ => {}
         }
     }
