@@ -15,6 +15,7 @@ pub(crate) fn get_builtin(func: &str) -> Option<BuiltinFunction> {
         "last" => Some(last_function),
         "len" => Some(len_function),
         "push" => Some(push_function),
+        "puts" => Some(puts_function),
         "rest" => Some(rest_function),
         _ => None,
     }
@@ -122,6 +123,14 @@ fn push_function(args: &[ObjectType]) -> ObjectType {
         }
         count => new_error(format!("wrong number of arguments. got={count:?} want=2")),
     }
+}
+
+fn puts_function(args: &[ObjectType]) -> ObjectType {
+    for arg in args {
+        println!("{}", arg.inspect());
+    }
+
+    Null
 }
 
 fn rest_function(args: &[ObjectType]) -> ObjectType {
